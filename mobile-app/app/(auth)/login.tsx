@@ -1,7 +1,12 @@
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Text, TextInput, TouchableOpacity, View } from 'react-native';
-
+import {
+  initiateLogin,
+  performLogout,
+  fetchUserInfo,
+  exchangeCodeForTokens
+} from './authLogic'; // Import auth functions
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,10 +27,11 @@ export default function Login() {
       </Text>
 
       <TouchableOpacity
-        onPress={handleSSOLogin}
+        onPress={initiateLogin}
         className="w-full bg-green-700 py-3 rounded-xl mb-4"
       >
         <Text className="text-white text-center font-medium">Login with KU ALL‑Login</Text>
+
       </TouchableOpacity>
 
       <Text className="text-gray-500 my-2">or</Text>
