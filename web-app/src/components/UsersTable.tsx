@@ -1,19 +1,83 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { User, Permission } from "../types";
-import { getUsers, getUserPermissions } from "../api";
+import {
+  getUsersPaged,          // returns { items, nextCursor }
+  getUserPermissions,
+  updateUser,             // PUT /users/:id
+  getRoles,               // GET /roles (returns RoleDict[])
+  // createRole,           // OPTIONAL: if you add an API for creating roles, you can call it in handleAddRole
+} from "../services/api";
 import PermissionModal from "./PermissionModal";
+
+type RoleDict = { name: string; label: string; permissions: string[] };
+
+const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    className={className ?? "w-4 h-4"}
+  >
+    <path strokeWidth="2" strokeLinecap="round" d="M12 5v14M5 12h14" />
+  </svg>
+);
 
 const UsersTable = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>([]);
   const [showModal, setShowModal] = useState(false);
+
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [editableUser, setEditableUser] = useState<User>({} as User);
 
+  // roles dictionary for role editor
+  const [roles, setRoles] = useState<RoleDict[]>([]);
+  const roleNames = useMemo(() => roles.map((r) => r.name), [roles]);
+
   useEffect(() => {
-    getUsers().then(setUsers).catch(console.error);
+    const boot = async () => {
+      try {
+        setLoading(true);
+        const [{ items, nextCursor }, rolesDict] = await Promise.all([
+          getUsersPaged({ limit: 20 }),
+          getRoles(),
+        ]);
+        setUsers(items);
+        setNextCursor(nextCursor);
+        setRoles(rolesDict);
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message ?? "Failed to load users");
+      } finally {
+        setLoading(false);
+      }
+    };
+    boot();
   }, []);
+
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    try {
+      setLoadingMore(true);
+      const { items, nextCursor: nc } = await getUsersPaged({
+        limit: 20,
+        cursor: nextCursor,
+      });
+      setUsers((prev) => [...prev, ...items]);
+      setNextCursor(nc);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message ?? "Failed to load more");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleView = async (userId: number) => {
     const perms = await getUserPermissions(userId);
@@ -32,16 +96,73 @@ const UsersTable = () => {
     }
   };
 
-  const handleSave = () => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === editableUser.id ? editableUser : u))
-    );
-    setEditing(false);
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      const updated = await updateUser(editableUser.id, {
+        firstName: editableUser.firstName,
+        lastName: editableUser.lastName,
+        email: editableUser.email,
+        roles: editableUser.roles, // includes role edits
+      });
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setEditing(false);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message ?? "Failed to update user");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const toggleRole = (roleName: string) => {
+    setEditableUser((prev) => {
+      const has = prev.roles?.includes(roleName);
+      const roles = has
+        ? prev.roles.filter((r) => r !== roleName)
+        : [...(prev.roles ?? []), roleName];
+      return { ...prev, roles };
+    });
+  };
+
+  // NEW: add-role flow (local state; wire to backend later if desired)
+  const handleAddRole = async () => {
+    const name = prompt("New role name?")?.trim();
+    if (!name) return;
+
+    // Optional: call your backend to create the role first.
+    // let created: RoleDict | undefined;
+    // try {
+    //   created = await createRole({ name });
+    // } catch (e) { /* handle error */ }
+
+    const newRole: RoleDict = { name, label: name, permissions: [] };
+    setRoles((prev) => {
+      // avoid duplicates by name (case-insensitive)
+      if (prev.some((r) => r.name.toLowerCase() === name.toLowerCase())) return prev;
+      return [...prev, newRole];
+    });
+
+    // If you want to auto-check the new role for the current user while editing:
+    if (editing && editableUser?.id != null) {
+      toggleRole(name);
+    }
+  };
+
+  if (loading && users.length === 0) {
+    return <div className="p-4 text-gray-600">Loading users…</div>;
+  }
+  if (error && users.length === 0) {
+    return <div className="p-4 text-red-600">{error}</div>;
+  }
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-800">User Management</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">User Management</h1>
+        {error && <span className="text-sm text-red-600">{error}</span>}
+      </div>
+
       <table className="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm">
         <thead>
           <tr className="bg-gray-100 text-left text-sm font-semibold text-gray-600">
@@ -51,13 +172,14 @@ const UsersTable = () => {
             <th className="p-3">Email</th>
             <th className="p-3">Roles</th>
             <th className="p-3">Permissions</th>
-            <th className="p-3">More Info</th>
+            {/* removed the Delete column */}
+            <th className="p-3">More</th>
           </tr>
         </thead>
         <tbody>
           {users.map((user) => (
-            <>
-              <tr key={user.id} className="text-sm text-gray-700 hover:bg-gray-50">
+            <React.Fragment key={user.id}>
+              <tr className="text-sm text-gray-700 hover:bg-gray-50">
                 <td className="p-3">{user.id}</td>
                 <td className="p-3">{user.firstName}</td>
                 <td className="p-3">{user.lastName}</td>
@@ -75,6 +197,7 @@ const UsersTable = () => {
                   <button
                     onClick={() => handleToggleInfo(user)}
                     className="text-gray-500 hover:text-gray-800"
+                    title="Expand"
                   >
                     &#x22EE;
                   </button>
@@ -86,32 +209,39 @@ const UsersTable = () => {
                   <td colSpan={7} className="p-3 bg-gray-50">
                     {!editing ? (
                       <div className="space-y-2">
-                        <p><strong>ID:</strong> {user.id}</p>
-                        <p><strong>Name:</strong> {user.firstName} {user.lastName}</p>
-                        <p><strong>Email:</strong> {user.email}</p>
-                        <p className="flex items-center gap-2">
-                            <strong>Roles:</strong>
-                            {user.roles.map((role) => (
-                                <span
-                                key={role}
-                                className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded"
-                                >
-                                {role}
-                                </span>
-                            ))}
-                              <button className="bg-gray-200 px-2 py-1 rounded text-xs">
-                        Edit Roles
-                    </button>
+                        <p>
+                          <strong>ID:</strong> {user.id}
                         </p>
-                        <button
-                          onClick={() => setEditing(true)}
-                          className="mt-2 text-blue-600 hover:underline text-sm"
-                        >
-                          Edit
-                        </button>
+                        <p>
+                          <strong>Name:</strong> {user.firstName} {user.lastName}
+                        </p>
+                        <p>
+                          <strong>Email:</strong> {user.email}
+                        </p>
+                        <p className="flex items-center gap-2 flex-wrap">
+                          <strong>Roles:</strong>
+                          {user.roles.map((role) => (
+                            <span
+                              key={role}
+                              className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded"
+                            >
+                              {role}
+                            </span>
+                          ))}
+                        </p>
+
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => setEditing(true)}
+                            className="text-blue-600 hover:underline text-sm"
+                          >
+                            Edit
+                          </button>
+                          {/* Delete button removed */}
+                        </div>
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-sm font-medium">First Name</label>
                           <input
@@ -140,7 +270,7 @@ const UsersTable = () => {
                             className="border rounded p-1 w-full text-sm"
                           />
                         </div>
-                        <div>
+                        <div className="md:col-span-2">
                           <label className="block text-sm font-medium">Email</label>
                           <input
                             type="email"
@@ -154,22 +284,64 @@ const UsersTable = () => {
                             className="border rounded p-1 w-full text-sm"
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium">Roles</label>
-                          <button className="bg-gray-200 px-2 py-1 rounded text-xs">
-                            Edit Roles
-                          </button>
+
+                        {/* Roles editor */}
+                        <div className="md:col-span-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-sm font-medium">Roles</label>
+                            {/* NEW: plus icon to add a new role */}
+                            <button
+                              type="button"
+                              onClick={handleAddRole}
+                              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 text-gray-700"
+                              title="Add role"
+                            >
+                              <PlusIcon />
+                              Add role
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {roleNames.map((r) => {
+                              const checked = editableUser.roles?.includes(r);
+                              return (
+                                <label
+                                  key={r}
+                                  className={`cursor-pointer text-xs px-2 py-1 rounded border ${
+                                    checked
+                                      ? "bg-blue-100 border-blue-300 text-blue-700"
+                                      : "bg-white"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="mr-1 align-middle"
+                                    checked={!!checked}
+                                    onChange={() => toggleRole(r)}
+                                  />
+                                  {r}
+                                </label>
+                              );
+                            })}
+                          </div>
                         </div>
 
-                        <div className="flex gap-2 mt-2">
+                        <div className="md:col-span-2 flex gap-2 mt-2">
                           <button
                             onClick={handleSave}
                             className="px-3 py-1 bg-green-500 text-white rounded text-sm"
+                            disabled={loading}
                           >
                             Save
                           </button>
                           <button
-                            onClick={() => setEditing(false)}
+                            onClick={() => {
+                              setEditing(false);
+                              const original = users.find(
+                                (u) => u.id === editableUser.id
+                              );
+                              if (original) setEditableUser(original);
+                            }}
                             className="px-3 py-1 bg-gray-300 rounded text-sm"
                           >
                             Cancel
@@ -180,10 +352,23 @@ const UsersTable = () => {
                   </td>
                 </tr>
               )}
-            </>
+            </React.Fragment>
           ))}
         </tbody>
       </table>
+
+      <div className="flex items-center gap-3">
+        {nextCursor && (
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="px-3 py-1 bg-gray-800 text-white rounded text-sm"
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        )}
+        {loading && <span className="text-sm text-gray-500">Working…</span>}
+      </div>
 
       <PermissionModal
         visible={showModal}

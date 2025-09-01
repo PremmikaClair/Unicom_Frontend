@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { LogOutIcon, AlignJustifyIcon } from "lucide-react";
+import { useAuth } from "../features/auth/AuthContext";
+
 
 const AdminSideBar = () => {
   const [isOpen, setIsOpen] = useState(true); // Sidebar defaults to open
+  const navigate = useNavigate();
+  const { logout } = useAuth();
 
-  const handleLogout = () => {
-    console.log("Logging out..."); // Just for testing
-    window.location.reload();
+  const handleLogout = async () => {
+    await logout();               // clears token + user
+    navigate("/login", { replace: true });
   };
 
   return (

@@ -7,6 +7,7 @@ toolchain go1.24.5
 require (
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/gofiber/swagger v1.1.1
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/joho/godotenv v1.5.1
 	github.com/swaggo/swag v1.16.4
 	go.mongodb.org/mongo-driver v1.17.4

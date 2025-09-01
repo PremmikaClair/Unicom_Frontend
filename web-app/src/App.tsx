@@ -1,26 +1,27 @@
 // App.tsx
 import { Routes, Route } from "react-router-dom";
-import Login from "./pages/Login";
-import Main from "./pages/Main";
-import UserPage from "./pages/UserPage";
-import RolesPage from "./pages/RolesPage";
-import PostPage from "./pages/PostPage";
+import RequireAuth from "./features/auth/RequireAuth";
+import Login from "./features/auth/Login";
+import UsersPage from "./features/users/UserPage";
+import RolesPage from "./features/roles/RolesPage";
+import PostPage from "./features/posts/PostPage";
 import AdminLayout from "./layouts/AdminLayout";
-
-function App() {
+export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Login />} />
+      {/* Public */}
+      <Route path="/login" element={<Login />} />
 
-      {/* Admin layout wraps admin routes */}
-      <Route path="/" element={<AdminLayout />}>
-        <Route path="main" element={<Main />} />
-        <Route path="users" element={<UserPage />} />
-        <Route path="roles" element={<RolesPage />} />
-        <Route path="post" element={<PostPage />} />
+      {/* Protected */}
+      <Route element={<RequireAuth />}>
+        <Route element={<AdminLayout />}>
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/roles" element={<RolesPage />} />
+          <Route path="/post" element={<PostPage />} />
+          {/* default protected landing */}
+          <Route path="/" element={<UsersPage />} />
+        </Route>
       </Route>
     </Routes>
   );
 }
-
-export default App;

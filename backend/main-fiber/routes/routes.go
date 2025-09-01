@@ -5,10 +5,9 @@ import (
 	"github.com/pllus/main-fiber/api"
 )
 
-// SetupRoutes initializes all API routes
 func SetupRoutes(app *fiber.App) {
-	api := app.Group("/api")
+	apiGroup := app.Group("/api")
 
-	// Register user routes under /api
-	user.RegisterUserRoutes(api)
+	api.RegisterUserRoutes(apiGroup)
+	api.RegisterPostRoutes(apiGroup)
 }
