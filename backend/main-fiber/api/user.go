@@ -1,10 +1,11 @@
- package api
+package api
 
 import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pllus/main-fiber/config"
+	"github.com/pllus/main-fiber/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -20,13 +22,13 @@ import (
 // ====== Paged Response ======
 
 type PagedUsersResponse struct {
-	Items      any    `json:"items"` // []User or []UserWithRoleDetails
+	Items      any    `json:"items"` // []models.User or []models.UserWithRoleDetails
 	NextCursor string `json:"nextCursor,omitempty"`
 }
 
 // ====== Helpers ======
 
-func usersColl() *mongo.Collection { return config.DB.Collection("Users") } // keep your current name
+func usersColl() *mongo.Collection { return config.DB.Collection("users") }
 func rolesColl() *mongo.Collection { return config.DB.Collection("roles") }
 
 // DB context
@@ -139,8 +141,8 @@ func GetUsers(c *fiber.Ctx) error {
 	}
 
 	pipeline := mongo.Pipeline{
-		{{Key: "$match", Value: match}},
-		{{Key: "$sort", Value: bson.D{{Key: "id", Value: 1}}}},
+		bson.D{{Key: "$match", Value: match}},
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "id", Value: 1}}}},
 	}
 
 	if include {
@@ -167,7 +169,7 @@ func GetUsers(c *fiber.Ctx) error {
 	defer cur.Close(ctx)
 
 	if include {
-		var docs []UserWithRoleDetails
+		var docs []models.UserWithRoleDetails
 		if err := cur.All(ctx, &docs); err != nil {
 			log.Println("Cursor decode error:", err)
 			return c.Status(500).SendString("Decode error")
@@ -175,7 +177,7 @@ func GetUsers(c *fiber.Ctx) error {
 		next := ""
 		if len(docs) > limit {
 			last := docs[limit-1]
-			if nc, err := encodeCursor(last.ID); err == nil {
+			if nc, err := encodeCursor(last.SeqID); err == nil { // ID is numeric app id
 				next = nc
 			}
 			docs = docs[:limit]
@@ -183,7 +185,7 @@ func GetUsers(c *fiber.Ctx) error {
 		return c.JSON(PagedUsersResponse{Items: docs, NextCursor: next})
 	}
 
-	var users []User
+	var users []models.User
 	if err := cur.All(ctx, &users); err != nil {
 		log.Println("Cursor decode error:", err)
 		return c.Status(500).SendString("Decode error")
@@ -191,7 +193,7 @@ func GetUsers(c *fiber.Ctx) error {
 	next := ""
 	if len(users) > limit {
 		last := users[limit-1]
-		if nc, err := encodeCursor(last.ID); err == nil {
+		if nc, err := encodeCursor(last.SeqID); err == nil {
 			next = nc
 		}
 		users = users[:limit]
@@ -204,7 +206,7 @@ func GetUsers(c *fiber.Ctx) error {
 // @Produce json
 // @Param id path int true "User numeric id"
 // @Param include query string false "roles,permissions to expand roleDetails"
-// @Success 200 {object} User
+// @Success 200 {object} models.User
 // @Router /users/{id} [get]
 func GetUserByID(c *fiber.Ctx) error {
 	userID, err := strconv.Atoi(c.Params("id"))
@@ -219,9 +221,9 @@ func GetUserByID(c *fiber.Ctx) error {
 
 	if include {
 		pipeline := mongo.Pipeline{
-			{{Key: "$match", Value: bson.M{"id": userID}}},
-			{{Key: "$limit", Value: 1}},
-			{{Key: "$lookup", Value: bson.M{
+			bson.D{{Key: "$match", Value: bson.M{"id": userID}}},
+			bson.D{{Key: "$limit", Value: 1}},
+			bson.D{{Key: "$lookup", Value: bson.M{
 				"from":         rolesColl().Name(),
 				"localField":   "roles",
 				"foreignField": "name",
@@ -236,7 +238,7 @@ func GetUserByID(c *fiber.Ctx) error {
 		defer cur.Close(ctx)
 
 		if cur.Next(ctx) {
-			var out UserWithRoleDetails
+			var out models.UserWithRoleDetails
 			if err := cur.Decode(&out); err != nil {
 				return c.Status(500).SendString("Decode error")
 			}
@@ -245,7 +247,7 @@ func GetUserByID(c *fiber.Ctx) error {
 		return c.SendStatus(404)
 	}
 
-	var u User
+	var u models.User
 	err = col.FindOne(ctx, bson.M{"id": userID}).Decode(&u)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return c.SendStatus(404)
@@ -261,17 +263,17 @@ func GetUserByID(c *fiber.Ctx) error {
 // @Tags users
 // @Accept json
 // @Produce json
-// @Param user body User true "User"
-// @Success 201 {object} User
+// @Param user body models.User true "User"
+// @Success 201 {object} models.User
 // @Router /users [post]
 func CreateUser(c *fiber.Ctx) error {
-	var newUser User
+	var newUser models.User
 	if err := c.BodyParser(&newUser); err != nil {
 		log.Println("Body parse error:", err)
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid request")
 	}
 
-	if newUser.ID == 0 {
+	if newUser.SeqID == 0 {
 		return c.Status(400).SendString("id is required (numeric)")
 	}
 	if strings.TrimSpace(newUser.Email) == "" {
@@ -305,8 +307,8 @@ func CreateUser(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Param id path int true "User numeric id"
-// @Param user body User true "User partial or full"
-// @Success 200 {object} User
+// @Param user body models.User true "User partial or full"
+// @Success 200 {object} models.User
 // @Router /users/{id} [put]
 func UpdateUser(c *fiber.Ctx) error {
 	userID, err := strconv.Atoi(c.Params("id"))
@@ -314,7 +316,7 @@ func UpdateUser(c *fiber.Ctx) error {
 		return c.Status(400).SendString("Invalid id")
 	}
 
-	var patch User
+	var patch models.User
 	if err := c.BodyParser(&patch); err != nil {
 		return c.Status(400).SendString("Invalid body")
 	}
@@ -370,7 +372,7 @@ func UpdateUser(c *fiber.Ctx) error {
 		return c.Status(500).SendString("DB error")
 	}
 
-	var updated User
+	var updated models.User
 	if err := res.Decode(&updated); err != nil {
 		return c.Status(500).SendString("Decode error")
 	}
@@ -404,6 +406,111 @@ func DeleteUser(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
+// ===== Permissions (flattened & deduplicated) =====
+
+type FlatPermission struct {
+	Key      string `json:"key"`      // "resource:action" for frontend convenience
+	Resource string `json:"resource"` // "user"
+	Action   string `json:"action"`   // "read"
+}
+
+// GET /users/:id/permissions
+func GetUserPermissions(c *fiber.Ctx) error {
+	userID, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+	return c.Status(400).SendString("invalid id")
+	}
+
+	ctx, cancel := dbCtx()
+	defer cancel()
+
+	// 1) Load user
+	var u models.User
+	if err := usersColl().FindOne(ctx, bson.M{"id": userID}).Decode(&u); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return c.SendStatus(404)
+		}
+		log.Println("FindOne error:", err)
+		return c.Status(500).SendString("DB error")
+	}
+	if len(u.Roles) == 0 {
+		return c.JSON([]FlatPermission{})
+	}
+
+	// 2) Load roles
+	cur, err := rolesColl().Find(ctx, bson.M{"name": bson.M{"$in": u.Roles}})
+	if err != nil {
+		log.Println("Find roles error:", err)
+		return c.Status(500).SendString("DB error")
+	}
+	defer cur.Close(ctx)
+
+	// 3) Deduplicate
+	uniq := map[string]FlatPermission{}
+
+	for cur.Next(ctx) {
+		var raw bson.M
+		if err := cur.Decode(&raw); err != nil {
+			log.Println("Role decode error:", err)
+			return c.Status(500).SendString("Decode error")
+		}
+
+		permA, _ := raw["permissions"].(bson.A)
+		for _, item := range permA {
+			switch v := item.(type) {
+			case string:
+				res, act := splitResAct(v)
+				if res == "" || act == "" {
+					continue
+				}
+				key := res + ":" + act
+				uniq[key] = FlatPermission{Key: key, Resource: res, Action: act}
+
+			case bson.M:
+				res := fmt.Sprint(v["resource"])
+				act := fmt.Sprint(v["action"])
+				if res == "" || act == "" {
+					continue
+				}
+				key := res + ":" + act
+				uniq[key] = FlatPermission{Key: key, Resource: res, Action: act}
+
+			case bson.D:
+				var res, act string
+				for _, e := range v {
+					switch e.Key {
+					case "resource":
+						res = fmt.Sprint(e.Value)
+					case "action":
+						act = fmt.Sprint(e.Value)
+					}
+				}
+				if res != "" && act != "" {
+					key := res + ":" + act
+					uniq[key] = FlatPermission{Key: key, Resource: res, Action: act}
+				}
+			}
+		}
+	}
+
+	// 4) Convert map → slice
+	out := make([]FlatPermission, 0, len(uniq))
+	for _, p := range uniq {
+		out = append(out, p)
+	}
+
+	return c.JSON(out)
+}
+
+// helpers
+func splitResAct(s string) (string, string) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return parts[0], ""
+}
+
 // RegisterUserRoutes registers user routes
 func RegisterUserRoutes(router fiber.Router) {
 	router.Get("/users", GetUsers)
@@ -411,4 +518,5 @@ func RegisterUserRoutes(router fiber.Router) {
 	router.Post("/users", CreateUser)
 	router.Put("/users/:id", UpdateUser)
 	router.Delete("/users/:id", DeleteUser)
+	router.Get("/users/:id/permissions", GetUserPermissions)
 }

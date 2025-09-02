@@ -8,7 +8,7 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("admin");
+  const [password, setPassword] = useState("admin123");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

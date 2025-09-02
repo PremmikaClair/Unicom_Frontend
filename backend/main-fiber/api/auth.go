@@ -1,19 +1,16 @@
 package api
 
 import (
-	"errors"
+	"log"
 	"os"
 	"strconv"
 	"time"
-	"log"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
-
-	"github.com/pllus/main-fiber/config"
+	"github.com/pllus/main-fiber/models"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ---- helpers ----
@@ -29,7 +26,7 @@ func envInt(key string, def int) int {
 
 func jwtSecret() []byte { return []byte(os.Getenv("JWT_SECRET")) }
 
-func signAccess(u User) (string, error) {
+func signAccess(u models.User) (string, error) {
 	min := envInt("ACCESS_TOKEN_TTL_MIN", 15)
 	claims := jwt.MapClaims{
 		"sub":   u.ID,
@@ -41,7 +38,7 @@ func signAccess(u User) (string, error) {
 	return t.SignedString(jwtSecret())
 }
 
-func signRefresh(u User) (string, error) {
+func signRefresh(u models.User) (string, error) {
 	min := envInt("REFRESH_TOKEN_TTL_MIN", 60*24*30)
 	claims := jwt.MapClaims{
 		"sub": u.ID,
@@ -58,7 +55,7 @@ func setRefreshCookie(c *fiber.Ctx, token string) {
 		Value:    token,
 		HTTPOnly: true,
 		SameSite: "None",
-		Secure:   false,
+		Secure:   false, // set true when serving over https
 		Path:     "/api/auth",
 		MaxAge:   envInt("REFRESH_TOKEN_TTL_MIN", 60*24*30) * 60,
 	})
@@ -76,8 +73,6 @@ func clearRefreshCookie(c *fiber.Ctx) {
 	})
 }
 
-func usersCol() *mongo.Collection { return config.DB.Collection("Users") }
-
 // ---- payloads ----
 
 type loginReq struct {
@@ -86,8 +81,8 @@ type loginReq struct {
 }
 
 type loginResp struct {
-	User        User   `json:"user"`
-	AccessToken string `json:"accessToken"`
+	User        models.User `json:"user"`
+	AccessToken string      `json:"accessToken"`
 }
 
 // ---- routes ----
@@ -106,24 +101,21 @@ func loginHandler(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid body")
 	}
 
-	var user User
-	err := usersCol().FindOne(c.Context(), bson.M{"email": req.Email}).Decode(&user)
+	var user models.User
+	err := usersColl().FindOne(c.Context(), bson.M{"email": req.Email}).Decode(&user)
 	if err != nil {
-	// DEBUG: distinguish not found vs other errors
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		log.Println("login: no user for email", req.Email)
-	} else {
-		log.Println("login: db error:", err)
-	}
-	return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
+		// DEBUG: distinguish not found vs other errors
+		// NOTE: mongo.ErrNoDocuments lives in the mongo package; but we don't need to branch specifically here
+		log.Println("login error:", err)
+		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 	if user.PasswordHash == "" {
-	log.Println("login: user has no password_hash set", req.Email)
-	return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
+		log.Println("login: user has no password_hash set", req.Email)
+		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
-	log.Println("login: bcrypt mismatch for", req.Email)
-	return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
+		log.Println("login: bcrypt mismatch for", req.Email)
+		return fiber.NewError(fiber.StatusUnauthorized, "invalid credentials")
 	}
 
 	access, err := signAccess(user)
@@ -141,7 +133,7 @@ func loginHandler(c *fiber.Ctx) error {
 
 func meHandler(c *fiber.Ctx) error {
 	auth := c.Get("Authorization")
-	if auth == "" || len(auth) < 8 {
+	if auth == "" || len(auth) < len("Bearer ")+1 {
 		return fiber.NewError(fiber.StatusUnauthorized, "missing token")
 	}
 	tokenStr := auth[len("Bearer "):]
@@ -151,8 +143,8 @@ func meHandler(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "invalid token")
 	}
 	email, _ := claims["email"].(string)
-	var user User
-	if err := usersCol().FindOne(c.Context(), bson.M{"email": email}).Decode(&user); err != nil {
+	var user models.User
+	if err := usersColl().FindOne(c.Context(), bson.M{"email": email}).Decode(&user); err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "user not found")
 	}
 	return c.JSON(user)
@@ -168,12 +160,12 @@ func refreshHandler(c *fiber.Ctx) error {
 	if err != nil || !t.Valid || claims["typ"] != "refresh" {
 		return fiber.NewError(fiber.StatusUnauthorized, "bad refresh")
 	}
-	sub, ok := claims["sub"].(float64)
+	sub, ok := claims["sub"].(float64) // JWT numbers become float64
 	if !ok {
 		return fiber.NewError(fiber.StatusUnauthorized, "bad sub")
 	}
-	var user User
-	if err := usersCol().FindOne(c.Context(), bson.M{"id": int(sub)}).Decode(&user); err != nil {
+	var user models.User
+	if err := usersColl().FindOne(c.Context(), bson.M{"id": int(sub)}).Decode(&user); err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "user not found")
 	}
 	access, err := signAccess(user)

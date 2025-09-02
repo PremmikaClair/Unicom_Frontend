@@ -1,36 +1,43 @@
+// src/types.ts
 
-
-export type Role = {
-  id: string;
-  name: string;            // e.g., 'admin', 'staff', 'student'
-  label: string;
-  permissions: Permission[];
+// Permission (simple)
+export type Permission = {
+  id?: string;
+  key: string;          // e.g. "user:read"
+  label?: string;
+  category?: string;
 };
 
+// Role
+export type Role = {
+  id?: string;
+  name: string;         // e.g. "student", "econ", "badminton"
+  label: string;
+  permissions: string[]; // array of permission keys
+};
+
+// User
 export type User = {
-    id: number;
-    firstName: string;
-    lastName: string;
-    thaiprefix: string;
-    gender : string;
-    type_person : string;
-    student_id: string;
-    advisor_id: string;
-    email: string;
-    roles: string[]; // list of roles
-  };
+  _id?: string;
+  id: number;           // required: your mock data always has it
+  firstName: string;
+  lastName: string;
+  thaiprefix?: string;
+  gender?: string;
+  type_person?: string;
+  student_id?: string;
+  advisor_id?: string;
+  email: string;
+  roles: string[];      // just strings — simple & flexible
+  createdAt?: string;
+  updatedAt?: string;
+};
 
-
-
-  
-  export type Permission = {
-    id: number;
-    resource: string;
-    action: string;
-  };
-
-export type LoginResult = {
-  user: User;
-  accessToken: string;     // short-lived
-  // refresh token stays in HttpOnly cookie set by server
+// Role binding (optional if you need scopes later)
+export type RoleBinding = {
+  id?: string;
+  userId: string;
+  student_id?: string;
+  roleName: string;
+  scope: { type: "global" | "faculty" | "club"; [k: string]: any };
 };

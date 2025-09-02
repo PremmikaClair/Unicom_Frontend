@@ -9,26 +9,18 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pllus/main-fiber/config"
+	"github.com/pllus/main-fiber/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
-
-// ----- Model -----
-
-type Role struct {
-	ID          string   `json:"id" bson:"_id"`              // store _id as string
-	Name        string   `json:"name" bson:"name"`
-	Label       string   `json:"label" bson:"label"`
-	Permissions []string `json:"permissions" bson:"permissions"`
-}
 
 // ----- Handlers -----
 
 // @Summary List roles
 // @Tags roles
 // @Produce json
-// @Success 200 {array} Role
+// @Success 200 {array} models.Role
 // @Router /roles [get]
 func GetRoles(c *fiber.Ctx) error {
 	col := config.DB.Collection("roles")
@@ -42,22 +34,22 @@ func GetRoles(c *fiber.Ctx) error {
 	}
 	defer cur.Close(ctx)
 
-	var roles []Role
+	var roles []models.Role
 	if err := cur.All(ctx, &roles); err != nil {
 		log.Println("roles decode error:", err)
 		return c.Status(500).SendString("Decode error")
 	}
 	if roles == nil {
-		roles = []Role{}
+		roles = []models.Role{}
 	}
 	return c.JSON(roles)
 }
 
-// @Summary Get a role by id
+// @Summary Get a role by name
 // @Tags roles
 // @Produce json
-// @Param id path string true "Role id (usually same as name)"
-// @Success 200 {object} Role
+// @Param id path string true "Role name"
+// @Success 200 {object} models.Role
 // @Router /roles/{id} [get]
 func GetRoleByID(c *fiber.Ctx) error {
 	id := strings.TrimSpace(c.Params("id"))
@@ -68,8 +60,8 @@ func GetRoleByID(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var role Role
-	err := col.FindOne(ctx, bson.M{"_id": id}).Decode(&role)
+	var role models.Role
+	err := col.FindOne(ctx, bson.M{"name": id}).Decode(&role) // lookup by name
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return c.SendStatus(404)
 	}
@@ -84,11 +76,11 @@ func GetRoleByID(c *fiber.Ctx) error {
 // @Tags roles
 // @Accept json
 // @Produce json
-// @Param role body Role true "Role"
-// @Success 201 {object} Role
+// @Param role body models.Role true "Role"
+// @Success 201 {object} models.Role
 // @Router /roles [post]
 func CreateRole(c *fiber.Ctx) error {
-	var in Role
+	var in models.Role
 	if err := c.BodyParser(&in); err != nil {
 		return c.Status(400).SendString("invalid body")
 	}
@@ -98,9 +90,6 @@ func CreateRole(c *fiber.Ctx) error {
 	if in.Name == "" {
 		return c.Status(400).SendString("name is required")
 	}
-	if in.ID == "" {
-		in.ID = in.Name // keep id stable & simple
-	}
 	if in.Permissions == nil {
 		in.Permissions = []string{}
 	}
@@ -109,8 +98,8 @@ func CreateRole(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// uniqueness check
-	cnt, err := col.CountDocuments(ctx, bson.M{"_id": in.ID})
+	// uniqueness check by name
+	cnt, err := col.CountDocuments(ctx, bson.M{"name": in.Name})
 	if err != nil {
 		return c.Status(500).SendString("DB error")
 	}
@@ -129,9 +118,9 @@ func CreateRole(c *fiber.Ctx) error {
 // @Tags roles
 // @Accept json
 // @Produce json
-// @Param id path string true "Role id"
-// @Param role body Role true "Role (partial)"
-// @Success 200 {object} Role
+// @Param id path string true "Role name"
+// @Param role body models.Role true "Role (partial)"
+// @Success 200 {object} models.Role
 // @Router /roles/{id} [put]
 func UpdateRole(c *fiber.Ctx) error {
 	id := strings.TrimSpace(c.Params("id"))
@@ -139,7 +128,7 @@ func UpdateRole(c *fiber.Ctx) error {
 		return c.Status(400).SendString("invalid id")
 	}
 
-	var patch Role
+	var patch models.Role
 	if err := c.BodyParser(&patch); err != nil {
 		return c.Status(400).SendString("invalid body")
 	}
@@ -163,7 +152,7 @@ func UpdateRole(c *fiber.Ctx) error {
 	defer cancel()
 
 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
-	res := col.FindOneAndUpdate(ctx, bson.M{"_id": id}, bson.M{"$set": set}, opts)
+	res := col.FindOneAndUpdate(ctx, bson.M{"name": id}, bson.M{"$set": set}, opts)
 	if res.Err() != nil {
 		if errors.Is(res.Err(), mongo.ErrNoDocuments) {
 			return c.SendStatus(404)
@@ -172,7 +161,7 @@ func UpdateRole(c *fiber.Ctx) error {
 		return c.Status(500).SendString("DB error")
 	}
 
-	var out Role
+	var out models.Role
 	if err := res.Decode(&out); err != nil {
 		return c.Status(500).SendString("decode error")
 	}
@@ -182,7 +171,7 @@ func UpdateRole(c *fiber.Ctx) error {
 // @Summary Delete role
 // @Tags roles
 // @Produce json
-// @Param id path string true "Role id"
+// @Param id path string true "Role name"
 // @Success 204 "No Content"
 // @Router /roles/{id} [delete]
 func DeleteRole(c *fiber.Ctx) error {
@@ -195,7 +184,7 @@ func DeleteRole(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	res, err := col.DeleteOne(ctx, bson.M{"_id": id})
+	res, err := col.DeleteOne(ctx, bson.M{"name": id})
 	if err != nil {
 		log.Println("delete role error:", err)
 		return c.Status(500).SendString("DB error")

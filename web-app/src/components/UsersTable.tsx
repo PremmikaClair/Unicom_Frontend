@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { User, Permission } from "../types";
 import {
-  getUsersPaged,          // returns { items, nextCursor }
+  getUsersPaged,
   getUserPermissions,
-  updateUser,             // PUT /users/:id
-  getRoles,               // GET /roles (returns RoleDict[])
-  // createRole,           // OPTIONAL: if you add an API for creating roles, you can call it in handleAddRole
+  updateUser,
+  getRoles,
 } from "../services/api";
 import PermissionModal from "./PermissionModal";
 
@@ -36,10 +35,10 @@ const UsersTable = () => {
   const [editing, setEditing] = useState(false);
   const [editableUser, setEditableUser] = useState<User>({} as User);
 
-  // roles dictionary for role editor
   const [roles, setRoles] = useState<RoleDict[]>([]);
   const roleNames = useMemo(() => roles.map((r) => r.name), [roles]);
 
+  // --- Boot data
   useEffect(() => {
     const boot = async () => {
       try {
@@ -48,7 +47,9 @@ const UsersTable = () => {
           getUsersPaged({ limit: 20 }),
           getRoles(),
         ]);
-        setUsers(items);
+        const map = new Map<number, User>();
+        for (const u of items) map.set(u.id, u);
+        setUsers(Array.from(map.values()).sort((a, b) => a.id - b.id));
         setNextCursor(nextCursor);
         setRoles(rolesDict);
       } catch (e: any) {
@@ -61,6 +62,7 @@ const UsersTable = () => {
     boot();
   }, []);
 
+  // --- Load more
   const loadMore = async () => {
     if (!nextCursor) return;
     try {
@@ -69,7 +71,12 @@ const UsersTable = () => {
         limit: 20,
         cursor: nextCursor,
       });
-      setUsers((prev) => [...prev, ...items]);
+      setUsers((prev) => {
+        const map = new Map<number, User>();
+        for (const u of prev) map.set(u.id, u);
+        for (const u of items) map.set(u.id, u);
+        return Array.from(map.values()).sort((a, b) => a.id - b.id);
+      });
       setNextCursor(nc);
     } catch (e: any) {
       console.error(e);
@@ -79,23 +86,31 @@ const UsersTable = () => {
     }
   };
 
+  // --- View permissions
   const handleView = async (userId: number) => {
-    const perms = await getUserPermissions(userId);
-    setSelectedPermissions(perms);
-    setShowModal(true);
+    try {
+      const perms = await getUserPermissions(userId);
+      setSelectedPermissions(perms ?? []);
+      setShowModal(true);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message ?? "Failed to load permissions");
+    }
   };
 
+  // --- Expand user info
   const handleToggleInfo = (user: User) => {
     if (expandedUserId === user.id) {
       setExpandedUserId(null);
       setEditing(false);
     } else {
       setExpandedUserId(user.id);
-      setEditableUser(user);
+      setEditableUser({ ...user, roles: user.roles ?? [] });
       setEditing(false);
     }
   };
 
+  // --- Save edits
   const handleSave = async () => {
     try {
       setLoading(true);
@@ -103,9 +118,11 @@ const UsersTable = () => {
         firstName: editableUser.firstName,
         lastName: editableUser.lastName,
         email: editableUser.email,
-        roles: editableUser.roles, // includes role edits
+        roles: editableUser.roles ?? [],
       });
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setUsers((prev) =>
+        prev.map((u) => (u.id === updated.id ? updated : u))
+      );
       setEditing(false);
     } catch (e: any) {
       console.error(e);
@@ -115,46 +132,36 @@ const UsersTable = () => {
     }
   };
 
+  // --- Toggle role in editor
   const toggleRole = (roleName: string) => {
     setEditableUser((prev) => {
-      const has = prev.roles?.includes(roleName);
+      const current = prev.roles ?? [];
+      const has = current.includes(roleName);
       const roles = has
-        ? prev.roles.filter((r) => r !== roleName)
-        : [...(prev.roles ?? []), roleName];
+        ? current.filter((r) => r !== roleName)
+        : [...current, roleName];
       return { ...prev, roles };
     });
   };
 
-  // NEW: add-role flow (local state; wire to backend later if desired)
+  // --- Add role to system
   const handleAddRole = async () => {
     const name = prompt("New role name?")?.trim();
     if (!name) return;
-
-    // Optional: call your backend to create the role first.
-    // let created: RoleDict | undefined;
-    // try {
-    //   created = await createRole({ name });
-    // } catch (e) { /* handle error */ }
-
     const newRole: RoleDict = { name, label: name, permissions: [] };
-    setRoles((prev) => {
-      // avoid duplicates by name (case-insensitive)
-      if (prev.some((r) => r.name.toLowerCase() === name.toLowerCase())) return prev;
-      return [...prev, newRole];
-    });
-
-    // If you want to auto-check the new role for the current user while editing:
-    if (editing && editableUser?.id != null) {
-      toggleRole(name);
-    }
+    setRoles((prev) =>
+      prev.some((r) => r.name.toLowerCase() === name.toLowerCase())
+        ? prev
+        : [...prev, newRole]
+    );
+    if (editing && editableUser?.id != null) toggleRole(name);
   };
 
-  if (loading && users.length === 0) {
+  // --- UI
+  if (loading && users.length === 0)
     return <div className="p-4 text-gray-600">Loading users…</div>;
-  }
-  if (error && users.length === 0) {
+  if (error && users.length === 0)
     return <div className="p-4 text-red-600">{error}</div>;
-  }
 
   return (
     <div className="space-y-4">
@@ -172,7 +179,6 @@ const UsersTable = () => {
             <th className="p-3">Email</th>
             <th className="p-3">Roles</th>
             <th className="p-3">Permissions</th>
-            {/* removed the Delete column */}
             <th className="p-3">More</th>
           </tr>
         </thead>
@@ -184,7 +190,7 @@ const UsersTable = () => {
                 <td className="p-3">{user.firstName}</td>
                 <td className="p-3">{user.lastName}</td>
                 <td className="p-3">{user.email}</td>
-                <td className="p-3">{user.roles.join(", ")}</td>
+                <td className="p-3">{(user.roles ?? []).join(", ")}</td>
                 <td className="p-3">
                   <button
                     onClick={() => handleView(user.id)}
@@ -213,23 +219,23 @@ const UsersTable = () => {
                           <strong>ID:</strong> {user.id}
                         </p>
                         <p>
-                          <strong>Name:</strong> {user.firstName} {user.lastName}
+                          <strong>Name:</strong> {user.firstName}{" "}
+                          {user.lastName}
                         </p>
                         <p>
                           <strong>Email:</strong> {user.email}
                         </p>
                         <p className="flex items-center gap-2 flex-wrap">
                           <strong>Roles:</strong>
-                          {user.roles.map((role) => (
+                          {(user.roles ?? []).map((role) => (
                             <span
-                              key={role}
+                              key={`${user.id}-${role}`}
                               className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded"
                             >
                               {role}
                             </span>
                           ))}
                         </p>
-
                         <div className="flex gap-2 mt-2">
                           <button
                             onClick={() => setEditing(true)}
@@ -237,19 +243,20 @@ const UsersTable = () => {
                           >
                             Edit
                           </button>
-                          {/* Delete button removed */}
                         </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-medium">First Name</label>
+                          <label className="block text-sm font-medium">
+                            First Name
+                          </label>
                           <input
                             type="text"
                             value={editableUser.firstName}
                             onChange={(e) =>
-                              setEditableUser((prev) => ({
-                                ...prev,
+                              setEditableUser((p) => ({
+                                ...p,
                                 firstName: e.target.value,
                               }))
                             }
@@ -257,13 +264,15 @@ const UsersTable = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium">Last Name</label>
+                          <label className="block text-sm font-medium">
+                            Last Name
+                          </label>
                           <input
                             type="text"
                             value={editableUser.lastName}
                             onChange={(e) =>
-                              setEditableUser((prev) => ({
-                                ...prev,
+                              setEditableUser((p) => ({
+                                ...p,
                                 lastName: e.target.value,
                               }))
                             }
@@ -271,13 +280,15 @@ const UsersTable = () => {
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="block text-sm font-medium">Email</label>
+                          <label className="block text-sm font-medium">
+                            Email
+                          </label>
                           <input
                             type="email"
                             value={editableUser.email}
                             onChange={(e) =>
-                              setEditableUser((prev) => ({
-                                ...prev,
+                              setEditableUser((p) => ({
+                                ...p,
                                 email: e.target.value,
                               }))
                             }
@@ -288,8 +299,9 @@ const UsersTable = () => {
                         {/* Roles editor */}
                         <div className="md:col-span-2">
                           <div className="flex items-center justify-between mb-1">
-                            <label className="block text-sm font-medium">Roles</label>
-                            {/* NEW: plus icon to add a new role */}
+                            <label className="block text-sm font-medium">
+                              Roles
+                            </label>
                             <button
                               type="button"
                               onClick={handleAddRole}
@@ -303,10 +315,12 @@ const UsersTable = () => {
 
                           <div className="flex flex-wrap gap-2">
                             {roleNames.map((r) => {
-                              const checked = editableUser.roles?.includes(r);
+                              const checked = (editableUser.roles ?? []).includes(
+                                r
+                              );
                               return (
                                 <label
-                                  key={r}
+                                  key={`role-opt-${r}`}
                                   className={`cursor-pointer text-xs px-2 py-1 rounded border ${
                                     checked
                                       ? "bg-blue-100 border-blue-300 text-blue-700"
@@ -316,7 +330,7 @@ const UsersTable = () => {
                                   <input
                                     type="checkbox"
                                     className="mr-1 align-middle"
-                                    checked={!!checked}
+                                    checked={checked}
                                     onChange={() => toggleRole(r)}
                                   />
                                   {r}
@@ -340,7 +354,11 @@ const UsersTable = () => {
                               const original = users.find(
                                 (u) => u.id === editableUser.id
                               );
-                              if (original) setEditableUser(original);
+                              if (original)
+                                setEditableUser({
+                                  ...original,
+                                  roles: original.roles ?? [],
+                                });
                             }}
                             className="px-3 py-1 bg-gray-300 rounded text-sm"
                           >
