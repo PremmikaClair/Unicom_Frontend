@@ -7,20 +7,29 @@ import 'add_post_page.dart';
 import 'events_page.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  final int initialIndex;
+  const AppShell({super.key, this.initialIndex = 0});
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int index = 0;
+  late int index;
 
-  final pages = const [
+  // เอา const ออก เว้นแต่ทุกหน้าเป็น const constructor จริง ๆ
+  final pages = [
     HomePage(),
     ExplorePage(),
     AddPostPage(),
     EventsPage(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    index = widget.initialIndex;
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -10,39 +10,67 @@ class HeaderSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return SafeArea(                         // <-- keeps away from notch
+    return SafeArea(
       bottom: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            GestureDetector(
-              onTap: onAvatarTap,            // <-- navigate to profile
-              child: const CircleAvatar(
-                radius: 20,
-                backgroundImage:
-                    NetworkImage('https://i.pravatar.cc/150?img=3'),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                GestureDetector(
+                  onTap: onAvatarTap,
+                  child: const CircleAvatar(
+                    radius: 20,
+                    backgroundImage:
+                        NetworkImage('https://i.pravatar.cc/150?img=3'),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings, color: AppColors.deepGreen),
+                  iconSize: 24, 
+                  onPressed: onSettingsTap,
+                  tooltip: 'Settings',
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
+
+            const SizedBox(height: 8), 
+
+           
+            Center(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   // Title
                   Text.rich(
                     TextSpan(
                       children: const [
-                        TextSpan(text: 'Welcome to '),
                         TextSpan(
-                          text: 'KUCOM',
+                          text: 'Welcome to ',
+                          style: TextStyle(
+                            color: AppColors.sage,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextSpan(
+                          text: 'KU',
                           style: TextStyle(
                             color: AppColors.deepGreen,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        TextSpan(text: ' 👋'),
+                        TextSpan(
+                          text: 'COM',
+                          style: TextStyle(
+                            color: AppColors.sage,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        TextSpan(text: '👋'),
                       ],
                     ),
                     style: textTheme.titleLarge?.copyWith(
@@ -50,24 +78,27 @@ class HeaderSection extends StatelessWidget {
                       color: Colors.black87,
                       height: 1.15,
                     ),
+                    textAlign: TextAlign.center,
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,   // <-- no overflow
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Your friendly space to share, connect, and thrive.',
-                    style: textTheme.bodyMedium?.copyWith(color: Colors.black54),
-                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
 
+                  const SizedBox(height: 4),
+
+                  // Tagline
+                  Text(
+                    'Your friendly space to share, connect, and thrive.',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: AppColors.sage,
+                      fontSize: 14, 
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                  ),
                 ],
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.settings, color: AppColors.deepGreen),
-              onPressed: onSettingsTap,
-              tooltip: 'Settings',
             ),
           ],
         ),

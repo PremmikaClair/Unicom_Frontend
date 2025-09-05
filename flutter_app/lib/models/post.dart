@@ -12,6 +12,10 @@ class Post {
   final List<String> visibilityRoles;// from "visibility_roles" (string/array)
   final DateTime timeStamp;          // from "time_stamp" or "Date"
 
+  // ✅ NEW: optional media
+  final String? picture;             // "picture" | "image" | "photo" | first of "images"
+  final String? video;               // "video" | "video_url" | "media_video"
+
   const Post({
     required this.id,
     required this.userId,
@@ -24,6 +28,8 @@ class Post {
     required this.authorRoles,
     required this.visibilityRoles,
     required this.timeStamp,
+    this.picture,
+    this.video,
   });
 
   static String _readId(dynamic v) {
@@ -48,12 +54,11 @@ class Post {
       if (d is int) return DateTime.fromMillisecondsSinceEpoch(d);
     }
     return DateTime.now();
-    }
+  }
 
   static List<String> _toStringList(dynamic v) {
     if (v is List) return v.map((e) => e.toString()).toList();
     if (v == null) return const [];
-    // single string -> wrap
     return [v.toString()];
   }
 
@@ -63,14 +68,25 @@ class Post {
     return '';
   }
 
+  static String? _readMedia(dynamic j, List<String> keys) {
+    for (final k in keys) {
+      final v = (j as Map<String, dynamic>)[k];
+      if (v == null) continue;
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+      if (v is List && v.isNotEmpty) return v.first.toString();
+    }
+    return null;
+  }
+
   factory Post.fromJson(Map<String, dynamic> j) {
-    // handle multiple possible keys
     final authorRolesRaw = j['author_roles'] ?? j['Roles'];
-    final visibilityRaw = j['visibility_roles'];
+    final visibilityRaw  = j['visibility_roles'];
+    final profile        = j['profile_pic'] ?? j['profile pic'];
+    final dateRaw        = j['time_stamp'] ?? j['Date'];
 
-    final profile = j['profile_pic'] ?? j['profile pic'];
-
-    final dateRaw = j['time_stamp'] ?? j['Date'];
+    // ✅ NEW: read media from multiple possible keys
+    final picture = _readMedia(j, ['picture', 'image', 'photo', 'images']);
+    final video   = _readMedia(j, ['video', 'video_url', 'media_video']);
 
     return Post(
       id: _readId(j['_id']),
@@ -84,6 +100,8 @@ class Post {
       authorRoles: _toStringList(authorRolesRaw),
       visibilityRoles: _toStringList(visibilityRaw),
       timeStamp: _readDate(dateRaw),
+      picture: picture,
+      video: video,
     );
   }
 
@@ -99,5 +117,7 @@ class Post {
         'author_roles': authorRoles,
         'visibility_roles': visibilityRoles,
         'time_stamp': timeStamp.toIso8601String(),
+        if (picture != null) 'picture': picture,
+        if (video != null) 'video': video,
       };
 }

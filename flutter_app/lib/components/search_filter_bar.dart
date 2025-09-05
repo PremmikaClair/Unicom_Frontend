@@ -134,40 +134,49 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
       }).toList(),
     );
 
-    final dropdownRow = Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: widget.dropdowns.map((d) {
-        return SizedBox(
-          width: 180,
-          child: InputDecorator(
-            decoration: InputDecoration(
-              labelText: d.label,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                isDense: true,
-                value: d.selectedId,
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: null,
-                    child: Text('Any'),
+    // แทนตัวเดิมทั้งบล็อก dropdownRow
+    final dropdownRow = LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 12.0;        // ช่องว่างระหว่างกล่อง
+        const perRow = 2;        // อยากได้ 2 กล่องต่อแถว (Category, Role)
+        final itemWidth = (constraints.maxWidth - (perRow - 1) * gap) / perRow;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: widget.dropdowns.map((d) {
+            return SizedBox(
+              width: itemWidth, // <-- คำนวณจากพื้นที่จริง
+              child: InputDecorator(
+                decoration: InputDecoration(
+                  labelText: d.label,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String?>(
+                    isDense: true,
+                    value: d.selectedId, // อนุญาต null
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Any'),
+                      ),
+                      ...d.items.map((it) => DropdownMenuItem<String?>(
+                            value: it.id,
+                            child: Text(it.label),
+                          )),
+                    ],
+                    onChanged: (val) => widget.onDropdownChanged?.call(d.id, val),
                   ),
-                  ...d.items.map((it) => DropdownMenuItem(
-                        value: it.id,
-                        child: Text(it.label),
-                      )),
-                ],
-                onChanged: (val) => widget.onDropdownChanged?.call(d.id, val),
+                ),
               ),
-            ),
-          ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
 
     final tuneBtn = widget.onOpenAdvanced == null
