@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../components/app_colors.dart';
@@ -19,21 +20,21 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // --- Keep your compile-time config & service (unused for now, API later) ---
   static const _defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'https://backend-xe4h.onrender.com',
   );
-
   late final DatabaseService _db = DatabaseService(baseUrl: _defaultBaseUrl);
 
-  // FIX: ต้องเริ่ม false ไม่งั้นโหลดรอบแรกจะไม่เริ่ม
-  bool _loading = false;
+  // --- Paging/Fetching state (unchanged API shape) ---
+  bool _loading = true;
   bool _fetchingMore = false;
-  String? _nextCursor;
-  String? _error;
+  String? _nextCursor; // we'll use String index into the mock list
 
   List<Post> _posts = [];
 
+  // --- Query/filters (kept for structure; not applied to mocks yet) ---
   String _query = '';
   final Set<String> _chipIds = <String>{};
   String? _categoryId = 'all';
@@ -41,150 +42,12 @@ class _HomePageState extends State<HomePage> {
 
   final _scroll = ScrollController();
 
-  // ----- Like/Comment ในหน้า -----
+  // --- Like/Comment state (optimistic) ---
   final Set<String> _likedIds = {};
   final Map<String, int> _likeCounts = {};
   final Map<String, int> _commentCounts = {};
   int _likeCountOf(Post p) => _likeCounts[p.id] ?? p.likeCount;
   int _commentCountOf(Post p) => _commentCounts[p.id] ?? p.comment;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFirstPage();                 // โหลดรอบแรกจะวิ่งจริง เพราะ _loading=false
-    _scroll.addListener(_maybeLoadMore);
-  }
-
-  @override
-  void dispose() {
-    _scroll.removeListener(_maybeLoadMore);
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  // ---------- Backend calls ----------
-  Future<void> _loadFirstPage() async {
-    if (_loading) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    final sort = _chipIds.contains('liked') ? 'liked' : 'recent';
-
-    try {
-      final page = await _db.getPosts(
-        q: _query,
-        filters: _chipIds.toList(),
-        category: _categoryId == 'all' ? null : _categoryId,
-        role: _roleId == 'any' ? null : _roleId,
-        sort: sort,
-        limit: 20,
-        cursor: null,
-      );
-      if (!mounted) return;
-      setState(() {
-        _posts = page.items;
-        _nextCursor = page.nextCursor;
-
-        // init ตัวเลขจากโหลดรอบนี้
-        for (final p in _posts) {
-          _likeCounts[p.id] = p.likeCount;
-          _commentCounts[p.id] = p.comment;
-        }
-      });
-    } catch (e, st) {
-      debugPrint('getPosts error: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _posts = [];
-        _nextCursor = null;
-        _error = e.toString();
-      });
-    } finally {
-      if (!mounted) return;
-      setState(() => _loading = false); // ปิดโหลดเสมอ
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_loading || _fetchingMore || _nextCursor == null) return;
-    setState(() => _fetchingMore = true);
-
-    final sort = _chipIds.contains('liked') ? 'liked' : 'recent';
-
-    try {
-      final page = await _db.getPosts(
-        q: _query,
-        filters: _chipIds.toList(),
-        category: _categoryId == 'all' ? null : _categoryId,
-        role: _roleId == 'any' ? null : _roleId,
-        sort: sort,
-        limit: 20,
-        cursor: _nextCursor,
-      );
-      if (!mounted) return;
-      setState(() {
-        _posts.addAll(page.items);
-        _nextCursor = page.nextCursor;
-
-        for (final p in page.items) {
-          _likeCounts[p.id] = p.likeCount;
-          _commentCounts[p.id] = p.comment;
-        }
-      });
-    } catch (e, st) {
-      debugPrint('loadMore error: $e\n$st');
-      if (!mounted) return;
-      _showSnack('Failed to load more');
-    } finally {
-      if (!mounted) return;
-      setState(() => _fetchingMore = false);
-    }
-  }
-
-  Future<void> _onRefresh() => _loadFirstPage();
-
-  void _maybeLoadMore() {
-    if (_loading || _fetchingMore || _nextCursor == null) return;
-    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 400) {
-      _loadMore();
-    }
-  }
-
-  // ---------- Like/Comment actions ----------
-  void _toggleLike(Post p) async {
-    final wasLiked = _likedIds.contains(p.id);
-    final current = _likeCounts[p.id] ?? p.likeCount;
-
-    setState(() {
-      if (wasLiked) {
-        _likedIds.remove(p.id);
-        _likeCounts[p.id] = (current - 1).clamp(0, 1 << 31);
-      } else {
-        _likedIds.add(p.id);
-        _likeCounts[p.id] = current + 1;
-      }
-    });
-
-    // TODO: call API แบบ optimistic แล้ว rollback ถ้าพัง
-  }
-
-  void _openComments(Post p) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => PostPage(post: p)),
-    );
-  }
-
-  // ---------- UI ----------
-  void _showSnack(String msg) {
-    final m = ScaffoldMessenger.maybeOf(context);
-    m?.hideCurrentSnackBar();
-    m?.showSnackBar(
-      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
-    );
-  }
 
   // ---------------------- MOCK (DB-shape) ----------------------
   final List<Map<String, dynamic>> mockPostDocs = [
@@ -341,60 +204,145 @@ class _HomePageState extends State<HomePage> {
   late final List<Post> mockPostsUi =
       mockPostDocs.map((j) => Post.fromJson(j)).toList();
 
+  // --- Mock paging cache (keeps order of your mock list) ---
+  static const int _pageSize = 20;
+  late final List<Post> _allMock = List<Post>.of(mockPostsUi);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFirstPage();
+    _scroll.addListener(_maybeLoadMore);
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_maybeLoadMore);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  // ---------- Mock "Backend" calls ----------
+  Future<void> _loadFirstPage() async {
+    setState(() => _loading = true);
+
+    try {
+      // Fake first page slice
+      final start = 0;
+      final end = (_allMock.length < _pageSize) ? _allMock.length : _pageSize;
+      final firstPage = _allMock.sublist(start, end);
+      final next = (end < _allMock.length) ? end.toString() : null;
+
+      setState(() {
+        _posts = firstPage;
+        _nextCursor = next;
+        _loading = false;
+
+        // init counters from first page
+        for (final p in _posts) {
+          _likeCounts[p.id] = p.likeCount;
+          _commentCounts[p.id] = p.comment;
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _posts = [];
+        _nextCursor = null;
+        _loading = false;
+      });
+      _showSnack('Failed to load posts (mock)');
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_fetchingMore || _nextCursor == null) return;
+    setState(() => _fetchingMore = true);
+
+    try {
+      final start = int.tryParse(_nextCursor!) ?? 0;
+      if (start >= _allMock.length) {
+        setState(() {
+          _nextCursor = null;
+          _fetchingMore = false;
+        });
+        return;
+      }
+
+      final end = (start + _pageSize <= _allMock.length)
+          ? start + _pageSize
+          : _allMock.length;
+
+      final pageItems = _allMock.sublist(start, end);
+      final next = (end < _allMock.length) ? end.toString() : null;
+
+      setState(() {
+        _posts.addAll(pageItems);
+        _nextCursor = next;
+        _fetchingMore = false;
+
+        for (final p in pageItems) {
+          _likeCounts[p.id] = p.likeCount;
+          _commentCounts[p.id] = p.comment;
+        }
+      });
+    } catch (e) {
+      setState(() => _fetchingMore = false);
+      _showSnack('Failed to load more (mock)');
+    }
+  }
+
+  Future<void> _onRefresh() => _loadFirstPage();
+
+  void _maybeLoadMore() {
+    if (!_scroll.hasClients) return;
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 400) {
+      _loadMore();
+    }
+  }
+
+  // ---------- Like/Comment actions (mock/optimistic) ----------
+  void _toggleLike(Post p) async {
+    final wasLiked = _likedIds.contains(p.id);
+    final current = _likeCounts[p.id] ?? p.likeCount;
+
+    setState(() {
+      if (wasLiked) {
+        _likedIds.remove(p.id);
+        _likeCounts[p.id] = math.max(0, current - 1);
+      } else {
+        _likedIds.add(p.id);
+        _likeCounts[p.id] = current + 1;
+      }
+    });
+
+    // TODO: API later (like/unlike) with rollback
+  }
+
+  void _openComments(Post p) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostPage(post: p)),
+    );
+  }
+
+  // ---------- UI ----------
+  void _showSnack(String msg) {
+    final m = ScaffoldMessenger.maybeOf(context);
+    m?.hideCurrentSnackBar();
+    m?.showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
+  }
+
   Widget _buildEmptyBody() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_error != null)
-            Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  children: [
-                    const Text('โหลดข้อมูลไม่สำเร็จ'),
-                    const SizedBox(height: 8),
-                    Text(
-                      _error!,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: Colors.red),
-                    ),
-                    const SizedBox(height: 8),
-                    FilledButton(onPressed: _onRefresh, child: const Text('ลองใหม่')),
-                  ],
-                ),
-              ),
-            ),
-          ...mockPostsUi.map((p) {
-            final liked = _likedIds.contains(p.id);
-            final likes = _likeCounts[p.id] ?? p.likeCount;
-            final comments = _commentCounts[p.id] ?? p.comment;
-
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Opacity(
-                opacity: 0.9,
-                child: PostCard(
-                  post: p,
-                  isLiked: liked,
-                  likeCount: likes,
-                  commentCount: comments,
-                  onToggleLike: () => _toggleLike(p),
-                  onCommentTap: () => _openComments(p),
-                  onCardTap: () => _openComments(p),
-                  onAvatarTap: () {},
-                ),
-              ),
-            );
-          }),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _onRefresh,
-            child: const Text('รีเฟรช / รีเซ็ตตัวกรอง'),
-          ),
+        children: const [
+          SizedBox(height: 120),
+          Center(child: Text('No posts (mock). Pull to refresh.')),
+          SizedBox(height: 100),
         ],
       ),
     );
@@ -429,18 +377,18 @@ class _HomePageState extends State<HomePage> {
                       context: context,
                       isScrollControlled: true,
                       backgroundColor: Colors.transparent,
-                      builder: (_) => const FilterBottomSheet(
-                        loadFilters: mockLoadFilters,
-                        initial: FilterSheetResult(
-                          facultyIds: {},
-                          clubIds: {},
-                          categoryIds: {},
+                      builder: (_) => FilterBottomSheet(
+                        loadFilters: mockLoadFilters, // keep structure; no-op
+                        initial: const FilterSheetResult(
+                          facultyIds: {}, clubIds: {}, categoryIds: {},
                         ),
                       ),
                     );
+
                     if (result != null) {
-                      // TODO: map result -> _chipIds/_categoryId/_roleId แล้ว:
-                      _loadFirstPage();
+                      // Keep state structure; apply to API later
+                      // setState(() { ... });
+                      // _loadFirstPage();
                     }
                   },
                 ),
