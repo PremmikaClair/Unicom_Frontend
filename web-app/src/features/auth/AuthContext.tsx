@@ -1,16 +1,15 @@
 // src/features/auth/AuthContext.tsx
-import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
-import { getMe, loginWithPassword, logoutServer } from "../../services/api";
+import React, {
+  createContext, useContext, useEffect, useMemo, useState
+} from "react";
+import { getMe, loginWithPassword, logoutServer, setToken } from "../../services/api";
 import type { User } from "../../types";
-import { setToken } from "../../services/api";
 
 type AuthState = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  hasRole: (r: string) => boolean;
-  hasPermission: (resource: string, action: string) => boolean;
 };
 
 const Ctx = createContext<AuthState | null>(null);
@@ -19,12 +18,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // bootstrap user if token exists
   useEffect(() => {
     (async () => {
       try {
+        const tok = localStorage.getItem("access_token");
+        if (!tok) {
+          setUser(null);
+          return;
+        }
+        setToken(tok);
         const me = await getMe();
         setUser(me);
       } catch {
+        setToken(null);
         setUser(null);
       } finally {
         setLoading(false);
@@ -33,28 +40,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, password: string) => {
+    console.log("📡 Calling backend /auth/login...");
     const res = await loginWithPassword(email, password);
-    setToken(res.accessToken);
-    setUser(res.user);
+    console.log("📦 Got response:", res);
+    setToken(res.access_token);
+    setUser(res.user ?? ({ id: "self", email } as any));
+    console.log("✅ Token stored, user set");
   };
+
 
   const logout = async () => {
-    await logoutServer().catch(() => {});
-    setToken(null);
-    setUser(null);
+    try {
+      await logoutServer();
+    } catch {
+      // ignore errors
+    } finally {
+      setToken(null);
+      setUser(null);
+    }
   };
 
-  const hasRole = (r: string) => !!user?.roles.includes(r);
-
-  // in your schema, roles = string[], permissions live in Role objects
-  // so backend probably maps user.roles → full Role objects when needed
-  const hasPermission = (resource: string, action: string) => {
-    // 🔮 if later backend sends expanded roles with permissions:
-    // user?.rolesExpanded.some(role => role.permissions.some(p => p.resource === resource && p.action === action))
-    return false; // placeholder until backend sends role->permissions map
-  };
-
-  const value = useMemo(() => ({ user, loading, login, logout, hasRole, hasPermission }), [user, loading]);
+  const value = useMemo(
+    () => ({ user, loading, login, logout }),
+    [user, loading]
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

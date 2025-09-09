@@ -1,3 +1,4 @@
+// api/users.go
 package api
 
 import (
@@ -5,32 +6,29 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
 	"github.com/pllus/main-fiber/config"
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/pllus/main-fiber/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ====== Paged Response ======
 
-type PagedUsersResponse struct {
-	Items      any    `json:"items"` // []models.User or []models.UserWithRoleDetails
-	NextCursor string `json:"nextCursor,omitempty"`
+func usersCol() *mongo.Collection { return config.DB.Collection("users") }
+func memCol() *mongo.Collection   { return config.DB.Collection("memberships") }
+
+func orgCol() *mongo.Collection   { return config.DB.Collection("org_units") }
+
+func ctx10() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 10*time.Second)
 }
-
 // ====== Helpers ======
-
-func usersColl() *mongo.Collection { return config.DB.Collection("users") }
-func rolesColl() *mongo.Collection { return config.DB.Collection("roles") }
-
 // DB context
 func dbCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 10*time.Second)
@@ -64,19 +62,6 @@ func decodeCursor(c string) (int, bool) {
 	return p.LastID, true
 }
 
-func parseInclude(raw string) (withLookup bool) {
-	if raw == "" {
-		return false
-	}
-	for _, p := range strings.Split(raw, ",") {
-		p = strings.TrimSpace(strings.ToLower(p))
-		if p == "roles" || p == "permissions" {
-			return true
-		}
-	}
-	return false
-}
-
 func parseLimit(q string, def, max int) int {
 	if q == "" {
 		return def
@@ -91,26 +76,29 @@ func parseLimit(q string, def, max int) int {
 	return n
 }
 
+// ====== DTOs ======
+
+type PagedUsersResponse struct {
+	Items      any    `json:"items"` // []models.User
+	NextCursor string `json:"nextCursor,omitempty"`
+}
+
 // ====== Handlers ======
 
-// @Summary Get users with search, filters, pagination
+// @Summary Get users with search + keyset pagination
 // @Tags users
 // @Produce json
 // @Param q query string false "Search by name/email/student_id"
-// @Param role query string false "Filter by role name"
 // @Param limit query int false "Page size (default 20, max 100)"
 // @Param cursor query string false "Keyset cursor (base64)"
-// @Param include query string false "roles,permissions to expand roleDetails"
 // @Success 200 {object} PagedUsersResponse
 // @Router /users [get]
 func GetUsers(c *fiber.Ctx) error {
 	col := usersColl()
 
 	q := strings.TrimSpace(c.Query("q"))
-	role := strings.TrimSpace(c.Query("role"))
 	limit := parseLimit(c.Query("limit"), 20, 100)
 	cursor := c.Query("cursor")
-	include := parseInclude(c.Query("include"))
 
 	match := bson.M{}
 	var and []bson.M
@@ -126,70 +114,36 @@ func GetUsers(c *fiber.Ctx) error {
 		}})
 	}
 
-	// filter by role
-	if role != "" {
-		and = append(and, bson.M{"roles": role})
-	}
-
 	// keyset pagination: id > lastID
 	if lastID, ok := decodeCursor(cursor); ok {
 		and = append(and, bson.M{"id": bson.M{"$gt": lastID}})
 	}
-
 	if len(and) > 0 {
 		match["$and"] = and
 	}
 
 	pipeline := mongo.Pipeline{
 		bson.D{{Key: "$match", Value: match}},
-		bson.D{{Key: "$sort", Value: bson.D{{Key: "id", Value: 1}}}},
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "id", Value: 1}}}}, // ascending for keyset
+		bson.D{{Key: "$limit", Value: limit + 1}},                    // fetch one extra to build nextCursor
 	}
-
-	if include {
-		pipeline = append(pipeline,
-			bson.D{{Key: "$lookup", Value: bson.M{
-				"from":         rolesColl().Name(),
-				"localField":   "roles",
-				"foreignField": "name",
-				"as":           "roleDetails",
-			}}},
-		)
-	}
-
-	pipeline = append(pipeline, bson.D{{Key: "$limit", Value: limit + 1}})
 
 	ctx, cancel := dbCtx()
 	defer cancel()
 
 	cur, err := col.Aggregate(ctx, pipeline)
 	if err != nil {
-		log.Println("Aggregate error:", err)
+		log.Println("users aggregate error:", err)
 		return c.Status(500).SendString("DB error")
 	}
 	defer cur.Close(ctx)
 
-	if include {
-		var docs []models.UserWithRoleDetails
-		if err := cur.All(ctx, &docs); err != nil {
-			log.Println("Cursor decode error:", err)
-			return c.Status(500).SendString("Decode error")
-		}
-		next := ""
-		if len(docs) > limit {
-			last := docs[limit-1]
-			if nc, err := encodeCursor(last.SeqID); err == nil { // ID is numeric app id
-				next = nc
-			}
-			docs = docs[:limit]
-		}
-		return c.JSON(PagedUsersResponse{Items: docs, NextCursor: next})
-	}
-
 	var users []models.User
 	if err := cur.All(ctx, &users); err != nil {
-		log.Println("Cursor decode error:", err)
+		log.Println("users decode error:", err)
 		return c.Status(500).SendString("Decode error")
 	}
+
 	next := ""
 	if len(users) > limit {
 		last := users[limit-1]
@@ -205,7 +159,6 @@ func GetUsers(c *fiber.Ctx) error {
 // @Tags users
 // @Produce json
 // @Param id path int true "User numeric id"
-// @Param include query string false "roles,permissions to expand roleDetails"
 // @Success 200 {object} models.User
 // @Router /users/{id} [get]
 func GetUserByID(c *fiber.Ctx) error {
@@ -213,39 +166,10 @@ func GetUserByID(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).SendString("Invalid id")
 	}
-	include := parseInclude(c.Query("include"))
 
 	col := usersColl()
 	ctx, cancel := dbCtx()
 	defer cancel()
-
-	if include {
-		pipeline := mongo.Pipeline{
-			bson.D{{Key: "$match", Value: bson.M{"id": userID}}},
-			bson.D{{Key: "$limit", Value: 1}},
-			bson.D{{Key: "$lookup", Value: bson.M{
-				"from":         rolesColl().Name(),
-				"localField":   "roles",
-				"foreignField": "name",
-				"as":           "roleDetails",
-			}}},
-		}
-		cur, err := col.Aggregate(ctx, pipeline)
-		if err != nil {
-			log.Println("Aggregate error:", err)
-			return c.Status(500).SendString("DB error")
-		}
-		defer cur.Close(ctx)
-
-		if cur.Next(ctx) {
-			var out models.UserWithRoleDetails
-			if err := cur.Decode(&out); err != nil {
-				return c.Status(500).SendString("Decode error")
-			}
-			return c.JSON(out)
-		}
-		return c.SendStatus(404)
-	}
 
 	var u models.User
 	err = col.FindOne(ctx, bson.M{"id": userID}).Decode(&u)
@@ -253,7 +177,7 @@ func GetUserByID(c *fiber.Ctx) error {
 		return c.SendStatus(404)
 	}
 	if err != nil {
-		log.Println("FindOne error:", err)
+		log.Println("users FindOne error:", err)
 		return c.Status(500).SendString("DB error")
 	}
 	return c.JSON(u)
@@ -267,16 +191,17 @@ func GetUserByID(c *fiber.Ctx) error {
 // @Success 201 {object} models.User
 // @Router /users [post]
 func CreateUser(c *fiber.Ctx) error {
-	var newUser models.User
-	if err := c.BodyParser(&newUser); err != nil {
-		log.Println("Body parse error:", err)
+	var u models.User
+	if err := c.BodyParser(&u); err != nil {
+		log.Println("users body parse error:", err)
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid request")
 	}
 
-	if newUser.SeqID == 0 {
+	// Basic validation
+	if u.SeqID == 0 { // numeric app id stored in field "id"
 		return c.Status(400).SendString("id is required (numeric)")
 	}
-	if strings.TrimSpace(newUser.Email) == "" {
+	if strings.TrimSpace(u.Email) == "" {
 		return c.Status(400).SendString("email is required")
 	}
 
@@ -284,22 +209,26 @@ func CreateUser(c *fiber.Ctx) error {
 	ctx, cancel := dbCtx()
 	defer cancel()
 
-	// unique on id
-	count, err := col.CountDocuments(ctx, bson.M{"id": newUser.ID})
-	if err != nil {
+	// unique on id and email
+	if n, err := col.CountDocuments(ctx, bson.M{"id": u.SeqID}); err != nil {
 		return c.Status(500).SendString("DB error")
-	}
-	if count > 0 {
+	} else if n > 0 {
 		return c.Status(409).SendString("User with this id already exists")
 	}
-
-	_, err = col.InsertOne(ctx, newUser)
-	if err != nil {
-		log.Println("Insert error:", err)
-		return c.Status(500).SendString("Failed to insert user")
+	if n, err := col.CountDocuments(ctx, bson.M{"email": strings.ToLower(u.Email)}); err != nil {
+		return c.Status(500).SendString("DB error")
+	} else if n > 0 {
+		return c.Status(409).SendString("User with this email already exists")
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(newUser)
+	// normalize email on write
+	u.Email = strings.ToLower(strings.TrimSpace(u.Email))
+
+	if _, err := col.InsertOne(ctx, u); err != nil {
+		log.Println("users insert error:", err)
+		return c.Status(500).SendString("Failed to insert user")
+	}
+	return c.Status(fiber.StatusCreated).JSON(u)
 }
 
 // @Summary Update an existing user by numeric id
@@ -321,36 +250,33 @@ func UpdateUser(c *fiber.Ctx) error {
 		return c.Status(400).SendString("Invalid body")
 	}
 
-	update := bson.M{}
-	if patch.FirstName != "" {
-		update["firstName"] = patch.FirstName
+	set := bson.M{}
+	if s := strings.TrimSpace(patch.FirstName); s != "" {
+		set["firstName"] = s
 	}
-	if patch.LastName != "" {
-		update["lastName"] = patch.LastName
+	if s := strings.TrimSpace(patch.LastName); s != "" {
+		set["lastName"] = s
 	}
-	if patch.ThaiPrefix != "" {
-		update["thaiprefix"] = patch.ThaiPrefix
+	if s := strings.TrimSpace(patch.ThaiPrefix); s != "" {
+		set["thaiprefix"] = s
 	}
-	if patch.Gender != "" {
-		update["gender"] = patch.Gender
+	if s := strings.TrimSpace(patch.Gender); s != "" {
+		set["gender"] = s
 	}
-	if patch.TypePerson != "" {
-		update["type_person"] = patch.TypePerson
+	if s := strings.TrimSpace(patch.TypePerson); s != "" {
+		set["type_person"] = s
 	}
-	if patch.StudentID != "" {
-		update["student_id"] = patch.StudentID
+	if s := strings.TrimSpace(patch.StudentID); s != "" {
+		set["student_id"] = s
 	}
-	if patch.AdvisorID != "" {
-		update["advisor_id"] = patch.AdvisorID
+	if s := strings.TrimSpace(patch.AdvisorID); s != "" {
+		set["advisor_id"] = s
 	}
-	if patch.Email != "" {
-		update["email"] = patch.Email
-	}
-	if patch.Roles != nil {
-		update["roles"] = patch.Roles
+	if s := strings.TrimSpace(patch.Email); s != "" {
+		set["email"] = strings.ToLower(s)
 	}
 
-	if len(update) == 0 {
+	if len(set) == 0 {
 		return c.Status(400).SendString("No fields to update")
 	}
 
@@ -361,14 +287,14 @@ func UpdateUser(c *fiber.Ctx) error {
 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 	res := col.FindOneAndUpdate(ctx,
 		bson.M{"id": userID},
-		bson.M{"$set": update},
+		bson.M{"$set": set},
 		opts,
 	)
 	if res.Err() != nil {
 		if errors.Is(res.Err(), mongo.ErrNoDocuments) {
 			return c.SendStatus(404)
 		}
-		log.Println("FindOneAndUpdate error:", res.Err())
+		log.Println("users update error:", res.Err())
 		return c.Status(500).SendString("DB error")
 	}
 
@@ -397,7 +323,7 @@ func DeleteUser(c *fiber.Ctx) error {
 
 	res, err := col.DeleteOne(ctx, bson.M{"id": userID})
 	if err != nil {
-		log.Println("DeleteOne error:", err)
+		log.Println("users delete error:", err)
 		return c.Status(500).SendString("DB error")
 	}
 	if res.DeletedCount == 0 {
@@ -406,117 +332,177 @@ func DeleteUser(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
-// ===== Permissions (flattened & deduplicated) =====
-
-type FlatPermission struct {
-	Key      string `json:"key"`      // "resource:action" for frontend convenience
-	Resource string `json:"resource"` // "user"
-	Action   string `json:"action"`   // "read"
-}
-
-// GET /users/:id/permissions
-func GetUserPermissions(c *fiber.Ctx) error {
-	userID, err := strconv.Atoi(c.Params("id"))
-	if err != nil {
-	return c.Status(400).SendString("invalid id")
+// GET /api/users/:id/memberships?view=raw|tags|codes&lang=en
+// :id is student_id (string)
+func GetUserMembershipsByStudentID(c *fiber.Ctx) error {
+	sid := strings.TrimSpace(c.Params("id"))
+	if sid == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "missing student id")
 	}
+	view := strings.ToLower(strings.TrimSpace(c.Query("view", "raw")))
+	lang := c.Query("lang", "en")
 
-	ctx, cancel := dbCtx()
+	ctx, cancel := ctx10()
 	defer cancel()
 
-	// 1) Load user
-	var u models.User
-	if err := usersColl().FindOne(ctx, bson.M{"id": userID}).Decode(&u); err != nil {
+	// 1) find user by student_id
+	var user models.User
+	if err := usersCol().FindOne(ctx, bson.M{"student_id": sid}).Decode(&user); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return c.SendStatus(404)
+			return fiber.NewError(fiber.StatusNotFound, "user not found")
 		}
-		log.Println("FindOne error:", err)
-		return c.Status(500).SendString("DB error")
-	}
-	if len(u.Roles) == 0 {
-		return c.JSON([]FlatPermission{})
+		return fiber.NewError(fiber.StatusInternalServerError, "DB error")
 	}
 
-	// 2) Load roles
-	cur, err := rolesColl().Find(ctx, bson.M{"name": bson.M{"$in": u.Roles}})
-	if err != nil {
-		log.Println("Find roles error:", err)
-		return c.Status(500).SendString("DB error")
-	}
-	defer cur.Close(ctx)
+	// 2) switch by view
+	switch view {
+	case "raw":
+		// plain memberships
+		cur, err := memCol().Find(ctx, bson.M{"user_id": user.ID})
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "DB error")
+		}
+		defer cur.Close(ctx)
 
-	// 3) Deduplicate
-	uniq := map[string]FlatPermission{}
+		var memberships []models.Membership
+		if err := cur.All(ctx, &memberships); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "decode error")
+		}
+		return c.JSON(fiber.Map{
+			"student_id":  sid,
+			"user_id":     user.ID,
+			"memberships": memberships,
+		})
 
-	for cur.Next(ctx) {
-		var raw bson.M
-		if err := cur.Decode(&raw); err != nil {
-			log.Println("Role decode error:", err)
-			return c.Status(500).SendString("Decode error")
+	case "tags":
+		// memberships -> positions -> org_units, build tag = pos.display.lang + " • " + org.short_name.lang
+		pipeline := mongo.Pipeline{
+			{{Key: "$match", Value: bson.M{"user_id": user.ID}}},
+			{{
+				Key: "$lookup",
+				Value: bson.M{
+					"from":         posCol().Name(),
+					"localField":   "position_key",
+					"foreignField": "key",
+					"as":           "pos",
+				},
+			}},
+			{{Key: "$unwind", Value: "$pos"}},
+			{{
+				Key: "$lookup",
+				Value: bson.M{
+					"from":         orgCol().Name(),
+					"localField":   "org_path",
+					"foreignField": "path",
+					"as":           "org",
+				},
+			}},
+			{{Key: "$unwind", Value: "$org"}},
+			{{
+				Key: "$project",
+				Value: bson.M{
+					"org_path":         1,
+					"position_key":     1,
+					"position_display": "$pos.display." + lang,
+					"org_short":        "$org.short_name." + lang,
+					"tag": bson.M{
+						"$concat": bson.A{"$pos.display." + lang, " • ", "$org.short_name." + lang},
+					},
+				},
+			}},
 		}
 
-		permA, _ := raw["permissions"].(bson.A)
-		for _, item := range permA {
-			switch v := item.(type) {
-			case string:
-				res, act := splitResAct(v)
-				if res == "" || act == "" {
-					continue
-				}
-				key := res + ":" + act
-				uniq[key] = FlatPermission{Key: key, Resource: res, Action: act}
-
-			case bson.M:
-				res := fmt.Sprint(v["resource"])
-				act := fmt.Sprint(v["action"])
-				if res == "" || act == "" {
-					continue
-				}
-				key := res + ":" + act
-				uniq[key] = FlatPermission{Key: key, Resource: res, Action: act}
-
-			case bson.D:
-				var res, act string
-				for _, e := range v {
-					switch e.Key {
-					case "resource":
-						res = fmt.Sprint(e.Value)
-					case "action":
-						act = fmt.Sprint(e.Value)
-					}
-				}
-				if res != "" && act != "" {
-					key := res + ":" + act
-					uniq[key] = FlatPermission{Key: key, Resource: res, Action: act}
-				}
-			}
+		cur, err := memCol().Aggregate(ctx, pipeline)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "DB error")
 		}
-	}
+		defer cur.Close(ctx)
 
-	// 4) Convert map → slice
-	out := make([]FlatPermission, 0, len(uniq))
-	for _, p := range uniq {
-		out = append(out, p)
-	}
+		var tags []bson.M
+		if err := cur.All(ctx, &tags); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "decode error")
+		}
+		return c.JSON(fiber.Map{
+			"student_id": sid,
+			"user_id":    user.ID.Hex(),
+			"tags":       tags, // each: {org_path, position_key, position_display, org_short, tag}
+		})
 
-	return c.JSON(out)
+	case "codes":
+		// optional: short codes like HEAD.CPSK or STUDENT.COM.ENG
+		pipeline := mongo.Pipeline{
+			{{Key: "$match", Value: bson.M{"user_id": user.ID}}},
+			{{
+				Key: "$lookup",
+				Value: bson.M{
+					"from":         posCol().Name(),
+					"localField":   "position_key",
+					"foreignField": "key",
+					"as":           "pos",
+				},
+			}},
+			{{Key: "$unwind", Value: "$pos"}},
+			{{
+				Key: "$lookup",
+				Value: bson.M{
+					"from":         orgCol().Name(),
+					"localField":   "org_path",
+					"foreignField": "path",
+					"as":           "org",
+				},
+			}},
+			{{Key: "$unwind", Value: "$org"}},
+			// Build CODE = UPPER(pos.key) + "." + (org.short_name.lang split by " • " and reversed)
+			{{
+				Key: "$project",
+				Value: bson.M{
+					"org_path":     1,
+					"position_key": 1,
+					"code": bson.M{
+						"$concat": bson.A{
+							bson.M{"$toUpper": "$position_key"},
+							".",
+							// replace " • " with "." then uppercase
+							bson.M{"$toUpper": bson.M{
+								"$replaceAll": bson.M{
+									"input": "$org.short_name." + lang,
+									"find":  " • ",
+									"replacement": ".",
+								},
+							}},
+						},
+					},
+				},
+			}},
+		}
+
+		cur, err := memCol().Aggregate(ctx, pipeline)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "DB error")
+		}
+		defer cur.Close(ctx)
+
+		var codes []bson.M
+		if err := cur.All(ctx, &codes); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "decode error")
+		}
+		return c.JSON(fiber.Map{
+			"student_id": sid,
+			"user_id":    user.ID.Hex(),
+			"codes":      codes, // each: {org_path, position_key, code}
+		})
+
+	default:
+		return fiber.NewError(fiber.StatusBadRequest, "unknown view")
+	}
 }
 
-// helpers
-func splitResAct(s string) (string, string) {
-	parts := strings.SplitN(s, ":", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
-	}
-	return parts[0], ""
-}
-
-// RegisterUserRoutes registers user routes
+// Router registration
 func RegisterUserRoutes(router fiber.Router) {
 	router.Get("/users", GetUsers)
 	router.Get("/users/:id", GetUserByID)
 	router.Post("/users", CreateUser)
 	router.Put("/users/:id", UpdateUser)
 	router.Delete("/users/:id", DeleteUser)
-	router.Get("/users/:id/permissions", GetUserPermissions)
+	router.Get("/users/:id/memberships", GetUserMembershipsByStudentID)
 }

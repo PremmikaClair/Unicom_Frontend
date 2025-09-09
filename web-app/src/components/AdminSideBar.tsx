@@ -77,6 +77,16 @@ const AdminSideBar = () => {
                 >
                   <span className="text-gray-100">POST</span>
                 </NavLink>
+                <NavLink
+                  to="/events"
+                  className={({ isActive }) =>
+                    isActive
+                      ? "bg-gray-700 p-2 block rounded"
+                      : "hover:bg-gray-700 p-2 block rounded"
+                  }
+                >
+                  <span className="text-gray-100">EVENTS</span>
+                </NavLink>
               </li>
             </ul>
           </nav>

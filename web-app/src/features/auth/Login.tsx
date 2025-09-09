@@ -17,18 +17,18 @@ const Login: React.FC = () => {
     setBusy(true);
     setErr(null);
     try {
-      // Call AuthContext.login -> sets token + user
-      await login(email, password);
-
-      // ✅ Force redirect to /users after login
+      console.log("▶️ Submitting login with", email, password);
+      await login(email, password);   // from AuthContext
+      console.log("✅ login() resolved, navigating now...");
       navigate("/users", { replace: true });
     } catch (e: any) {
+      console.error("❌ login() failed:", e);
       setErr(e.message || "Login failed");
     } finally {
       setBusy(false);
+      console.log("⏹️ Login submit finished");
     }
   };
-
   const startOAuth = () => {
     const API = import.meta.env.VITE_API_BASE_URL as string;
     const APP = import.meta.env.VITE_APP_BASE_URL as string;

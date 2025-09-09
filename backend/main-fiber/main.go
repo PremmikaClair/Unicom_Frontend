@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/swagger"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/swagger"
 
 	_ "github.com/pllus/main-fiber/docs"
 
@@ -30,34 +30,41 @@ func getEnv(key, def string) string {
 func main() {
 	app := fiber.New()
 
-	// Allow one or more specific origins (comma-separated).
-	// Example dev: FRONTEND_ORIGINS=http://localhost:5173
+	// CORS
 	allowed := getEnv("FRONTEND_ORIGINS", "http://localhost:5173")
-
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(strings.Split(allowed, ","), ","),
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		ExposeHeaders:    "Authorization",
-		AllowCredentials: true, // <- required when using cookies
+		AllowCredentials: true,
 	}))
 
+	// DB
 	config.ConnectMongo()
 
 	// Health
 	app.Get("/healthz", func(c *fiber.Ctx) error { return c.SendString("ok") })
 
-	// Group all API under /api
+	// API group
 	apiGroup := app.Group("/api")
 
-	// Auth routes (added below)
+	// Auth
 	api.RegisterAuthRoutes(apiGroup)
+	
 
-	// Existing feature routes
+	// Existing (keep)
 	api.RegisterUserRoutes(apiGroup)
-	api.RegisterRoleRoutes(apiGroup)
 
-	// Swagger after routes
+	// 🔄 REPLACE old roles route with positions + policies
+	// REMOVE: api.RegisterRoleRoutes(apiGroup)
+	api.RegisterPositionRoutes(apiGroup) // /positions CRUD (catalog of roles)
+	api.RegisterPolicyRoutes(apiGroup)   // /policies CRUD (permission rules)
+
+	// 🆕 Posts (backward compatible model + new fields)
+	api.RegisterPostRoutes(apiGroup) // /posts
+
+	// Swagger
 	app.Get("/docs/*", swagger.HandlerDefault)
 
 	port := getEnv("PORT", "3000")

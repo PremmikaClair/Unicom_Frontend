@@ -3,6 +3,8 @@ package api
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"go.mongodb.org/mongo-driver/mongo"
+	"github.com/pllus/main-fiber/rbac"
 )
 
 func RequireAuth() fiber.Handler {
@@ -36,5 +38,19 @@ func RequireRole(role string) fiber.Handler {
 			}
 		}
 		return fiber.NewError(fiber.StatusForbidden, "forbidden")
+	}
+}
+
+
+func Require(db *mongo.Database, action, resource, orgParam string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		uid := c.Locals("user_id")
+		org := c.Params(orgParam)
+		ok, err := rbac.Can(c.Context(), db, rbac.CheckInput{
+			UserID: uid.(string), OrgPath: org, Action: action, Resource: resource,
+		})
+		if err != nil { return fiber.ErrInternalServerError }
+		if !ok { return fiber.ErrForbidden }
+		return c.Next()
 	}
 }
