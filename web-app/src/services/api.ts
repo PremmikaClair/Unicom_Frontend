@@ -207,4 +207,44 @@ export async function hidePostApi(id: string) {
 
 export async function unhidePostApi(id: string) {
   await apiFetch<void>(`/posts/${id}/unhide`, { method: "POST" });
+
+}
+
+
+import type { OrgUnitNode, Policy } from "../types";
+
+/* -------- Org Units -------- */
+export async function getOrgTree(): Promise<OrgUnitNode[]> {
+  // Adjust the path to your backend route. If your server exposes /org/units/tree, use that.
+  return apiFetch<OrgUnitNode[]>("/org/units/tree");
+}
+
+/* -------- Policies (CRUD) -------- */
+export async function listPolicies(params?: { org_prefix?: string; position_key?: string }) {
+  const qs = new URLSearchParams();
+  if (params?.org_prefix) qs.set("org_prefix", params.org_prefix);
+  if (params?.position_key) qs.set("position_key", params.position_key);
+  const q = qs.toString();
+  return apiFetch<Policy[]>(`/policies${q ? "?" + q : ""}`);
+}
+
+export async function createPolicy(p: Policy) {
+  return apiFetch<Policy>("/policies", {
+    method: "POST",
+    body: JSON.stringify(p),
+  });
+}
+
+// Upsert by (position_key, where.org_prefix, scope)
+export async function upsertPolicy(p: Policy) {
+  return apiFetch<Policy>("/policies", {
+    method: "PUT",
+    body: JSON.stringify(p),
+  });
+}
+
+export async function deletePolicy(org_prefix: string, position_key?: string) {
+  const qs = new URLSearchParams({ org_prefix });
+  if (position_key) qs.set("position_key", position_key);
+  await apiFetch<void>(`/policies?${qs.toString()}`, { method: "DELETE" });
 }

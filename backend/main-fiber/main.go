@@ -64,6 +64,8 @@ func main() {
 	// 🆕 Posts (backward compatible model + new fields)
 	api.RegisterPostRoutes(apiGroup) // /posts
 
+
+	api.RegisterOrgRoutes(apiGroup)
 	// Swagger
 	app.Get("/docs/*", swagger.HandlerDefault)
 
