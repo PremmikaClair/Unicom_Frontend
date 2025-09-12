@@ -1,4 +1,25 @@
 // ---------- Existing ----------
+// Org tree node
+export type OrgUnitNode = {
+  org_path: string;                 // "/faculty/eng/com"
+  label?: string;                   // "Computer Engineering"
+  short_name?: string;              // "COM"
+  children?: OrgUnitNode[];
+};
+
+// Policy (scoped, prefix-based)
+export type Policy = {
+  _id?: string;
+  key?: string;
+  position_key: string;             // "head" | "member" | "student"
+  where: { org_prefix: string };    // "/faculty/" or "/club/"
+  scope: "exact" | "subtree";
+  effect: "allow" | "deny";         // MVP: allow
+  actions: string[];                // e.g. ["post:create", "event:create"]
+  enabled: boolean;
+  created_at?: string;
+};
+
 export type Position = {
   key: string;
   display?: { [lang: string]: string };
@@ -8,17 +29,41 @@ export type Position = {
   status?: "active" | "inactive";
 };
 
-export type Membership = {
+export type MembershipDoc = {
+  _id?: string;                // membership id (ObjectId)
   org_path: string;            // "/club/cpsk"
   position_key: string;        // "head"
+  status?: "active" | "inactive";        // legacy enum (optional)
+  active?: boolean;           // preferred boolean (BE normalization)
+  user_id?: string;            // owner id
   joined_at?: string;          // ISO
+  created_at?: string;         // ISO (if provided)
+  org_ancestors?: string[];    // e.g., ["/", "/faculty", "/faculty/eng"]
+};
+// FE shape already used across the app
+export type Membership = {
+  _id?: string;
+  org_path: string;
+  position_key: string;
+  active?: boolean;
 };
 
-export type RolesSummary = {
-  user_id: string;
-  memberships: Membership[];
-  updated_at?: string;
+export type UserBrief = {
+  _id?: string;
+  id?: number;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  student_id?: string;
 };
+
+export type MembershipWithUser = Membership & {
+  user?: UserBrief;
+  user_id?: string;
+};
+
+
+
 
 export type User = {
   _id?: string;
@@ -87,3 +132,27 @@ export type PostDoc = {
 
 // Optional helpers for common API payloads
 export type Paged<T> = { items: T[]; nextCursor?: string };
+
+
+// A single permission key (derived from policies). Simple alias for clarity in UI.
+export type Permission = {
+  key: string;            // e.g., "users:read"
+  label?: string;
+};
+
+
+
+export type OrgUnit = {
+  _id?: string;
+  path: string;                // "/faculty/eng/com"
+  parent_path?: string;        // "/faculty/eng"
+  ancestors?: string[];        // ["/", "/faculty", "/faculty/eng"]
+  depth?: number;
+  slug?: string;
+  type?: string;               // "faculty" | "club" | ...
+  name?: Record<string, string>;
+  short_name?: Record<string, string>;
+  sort?: number;
+  status?: "active" | "archived";
+  visibility?: "public" | "private";
+};

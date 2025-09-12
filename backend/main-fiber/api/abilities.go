@@ -1,38 +1,18 @@
 package api
 
 import (
-	"strings"
+    "strings"
 
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/pllus/main-fiber/config"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
+    "github.com/gofiber/fiber/v2"
+    "github.com/pllus/main-fiber/config"
+    "go.mongodb.org/mongo-driver/bson"
+    "go.mongodb.org/mongo-driver/bson/primitive"
+    "go.mongodb.org/mongo-driver/mongo"
 )
 
 // ---- collections
 func membershipsColl() *mongo.Collection { return config.DB.Collection("memberships") }
 func policiesColl() *mongo.Collection    { return config.DB.Collection("policies") }
-
-// ---- auth extractor (use SAME secret as auth.go)
-func userIDFromBearer(c *fiber.Ctx) (primitive.ObjectID, error) {
-	auth := c.Get("Authorization")
-	if !strings.HasPrefix(auth, "Bearer ") {
-		return primitive.NilObjectID, fiber.NewError(fiber.StatusUnauthorized, "missing token")
-	}
-	tok := strings.TrimPrefix(auth, "Bearer ")
-	claims := jwt.MapClaims{}
-	t, err := jwt.ParseWithClaims(tok, claims, func(t *jwt.Token) (interface{}, error) {
-		return jwtSecret(), nil // <- from auth.go (same package)
-	})
-	if err != nil || !t.Valid {
-		return primitive.NilObjectID, fiber.NewError(fiber.StatusUnauthorized, "invalid token")
-	}
-	sub, _ := claims["sub"].(string)
-	return primitive.ObjectIDFromHex(sub)
-}
 
 type membershipDoc struct {
 	UserID      primitive.ObjectID `bson:"user_id"`
@@ -41,127 +21,51 @@ type membershipDoc struct {
 }
 
 type abilitiesResp struct {
-	OrgPath   string          `json:"org_path"`
-	Abilities map[string]bool `json:"abilities"`
-	Version   string          `json:"version,omitempty"`
+    OrgPath   string          `json:"org_path"`
+    Abilities map[string]bool `json:"abilities"`
+    Version   string          `json:"version,omitempty"`
 }
 
 // GET /api/abilities?org_path=/club/cpsk[&actions=event:create,post:create]
+// @Summary      Get user abilities for an org path
+// @Description  Returns allowed actions for the user in the specified org path
+// @Tags         abilities
+// @Accept       json
+// @Produce      json
+// @Param        org_path  query     string  true  "Organization path"
+// @Param        actions   query     string  false "Comma-separated actions to check"
+// @Success      200       {object}  abilitiesResp
+// @Router       /api/abilities [get]
 func GetAbilities(c *fiber.Ctx) error {
-	orgPath := strings.TrimSpace(c.Query("org_path"))
-	if orgPath == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "org_path is required")
-	}
-	// optional filter
-	var requested []string
-	if s := strings.TrimSpace(c.Query("actions")); s != "" {
-		for _, a := range strings.Split(s, ",") {
-			if a = strings.TrimSpace(a); a != "" {
-				requested = append(requested, a)
-			}
-		}
-	}
-	// default pack if not provided
-	if len(requested) == 0 {
-		requested = []string{"post:create", "event:create", "post:moderate"}
-	}
+    orgPath := strings.TrimSpace(c.Query("org_path"))
+    if orgPath == "" {
+        return fiber.NewError(fiber.StatusBadRequest, "org_path is required")
+    }
 
-	userID, err := userIDFromBearer(c)
-	if err != nil {
-		return err
-	}
+    // fixed action set for UI
+    actions := []string{"membership:assign","membership:revoke","position:create","policy:write","event:create","event:manage","post:create","post:moderate"}
 
-	ctx, cancel := ctx10()
-	defer cancel()
+    userID, err := userIDFromBearer(c)
+    if err != nil { return err }
 
-	// 1) load memberships for user
-	var mems []membershipDoc
-	cur, err := membershipsColl().Find(ctx, bson.M{"user_id": userID})
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "DB error")
-	}
-	if err := cur.All(ctx, &mems); err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "decode error")
-	}
+    ctx, cancel := ctx10(); defer cancel()
+    allowed, err := AbilitiesFor(ctx, userID, orgPath, actions)
+    if err != nil { return fiber.NewError(fiber.StatusInternalServerError, "abilities failed") }
 
-	// 2) load policies for user positions (enabled)
-	posSet := map[string]struct{}{}
-	for _, m := range mems {
-		posSet[m.PositionKey] = struct{}{}
-	}
-	posArr := make([]string, 0, len(posSet))
-	for k := range posSet {
-		posArr = append(posArr, k)
-	}
-	polFilter := bson.M{"enabled": true}
-	if len(posArr) > 0 {
-		polFilter["position_key"] = bson.M{"$in": posArr}
-	}
-	pcur, err := policiesColl().Find(ctx, polFilter)
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "DB error")
-	}
-	var pols []Policy
-	if err := pcur.All(ctx, &pols); err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "decode error")
-	}
-
-	// 3) evaluate
-	allowed := map[string]bool{}
-	for _, a := range requested {
-		allowed[a] = false
-	}
-	for _, m := range mems {
-		for _, p := range pols {
-			// match policy to membership by position + prefix
-			if p.PositionKey != m.PositionKey {
-				continue
-			}
-			if !strings.HasPrefix(m.OrgPath, p.Where.OrgPrefix) {
-				continue
-			}
-			// action present?
-			hasAction := false
-			for _, pa := range p.Actions {
-				if pa == "*" || pa == requested[0] { // fast path
-					hasAction = true
-					break
-				}
-			}
-			// (we need per-action check below anyway)
-			for _, req := range requested {
-				if !contains(p.Actions, req) {
-					continue
-				}
-				switch p.Scope {
-				case "exact":
-					if orgPath == m.OrgPath {
-						allowed[req] = true
-					}
-				case "subtree":
-					if strings.HasPrefix(orgPath, m.OrgPath) {
-						allowed[req] = true
-					}
-				default: // treat unknown as exact
-					if orgPath == m.OrgPath {
-						allowed[req] = true
-					}
-				}
-			}
-			_ = hasAction // keep var for possible diagnostics
-		}
-	}
-
-	return c.JSON(abilitiesResp{
-		OrgPath:   orgPath,
-		Abilities: allowed,
-		Version:   "pol-v2",
-	})
+    return c.JSON(abilitiesResp{ OrgPath: orgPath, Abilities: allowed, Version: "pol-v2" })
 }
 
 // ---- Where can I perform an action? (compact list)
 
 // GET /api/abilities/where?action=event:create
+// @Summary      List org paths where user can perform an action
+// @Description  Returns org paths where the user has permission for the specified action
+// @Tags         abilities
+// @Accept       json
+// @Produce      json
+// @Param        action  query     string  true  "Action to check"
+// @Success      200     {object}  map[string]interface{}
+// @Router       /api/abilities/where [get]
 func WhereAbilities(c *fiber.Ctx) error {
 	action := strings.TrimSpace(c.Query("action"))
 	if action == "" {

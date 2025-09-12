@@ -1,16 +1,17 @@
 // src/components/UsersTable.tsx
 import React, { useEffect, useState } from "react";
 import type { User, Membership, Position } from "../types";
+import useAbilities from "../hooks/useAbilities";
 import {
   getUsersPaged,
-  getUserPermissions,
   updateUser,
   createUser,
   deleteUser,
   getPositions,
   getMembershipsRaw,
+  createMembership,
+  deactivateMembership,
 } from "../services/api";
-import PermissionModal from "./PermissionModal";
 
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className={className ?? "w-4 h-4"}>
@@ -25,7 +26,13 @@ function membershipLabel(m: Membership, positions: Position[]) {
     (pos?.display && (pos.display.en || Object.values(pos.display)[0])) ||
     pos?.key ||
     m.position_key;
-  const orgBits = m.org_path.split("/").filter(Boolean).reverse();
+
+  const orgBits = m.org_path
+    .split("/")
+    .filter(Boolean)
+    .reverse()
+    .map((bit) => bit.toUpperCase());
+
   return [role, ...orgBits].join(" • ");
 }
 
@@ -36,8 +43,7 @@ const UsersTable: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
-  const [showModal, setShowModal] = useState(false);
+  // permissions UI removed
 
   const [expandedUserKey, setExpandedUserKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -120,20 +126,6 @@ useEffect(() => {
     }
   };
 
-  // ----- Permissions modal
-  const handleViewPermissions = async (user: User) => {
-    try {
-      if (typeof user.id !== "number") {
-        throw new Error("User missing numeric id");
-      }
-      const perms = await getUserPermissions(user.id);
-      setSelectedPermissions(perms ?? []);
-      setShowModal(true);
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message ?? "Failed to load permissions");
-    }
-  };
 
   // ----- Row expand / edit
   const handleToggleInfo = (user: User) => {
@@ -154,8 +146,8 @@ useEffect(() => {
   // ----- Save (basic fields only; memberships require dedicated APIs)
   const handleSave = async () => {
     try {
-      if (typeof editableUser.id !== "number") {
-        throw new Error("User missing numeric id");
+      if (!Number.isFinite(editableUser.id) || (editableUser.id as any) <= 0) {
+        throw new Error("User missing numeric id (cannot update)");
       }
       setLoading(true);
       const updated = await updateUser(editableUser.id, {
@@ -171,6 +163,7 @@ useEffect(() => {
       console.error(e);
       setError(e?.message ?? "Failed to update user");
     } finally {
+      setLoading(false);
       setLoading(false);
     }
   };
@@ -219,68 +212,7 @@ useEffect(() => {
     }
   };
 
-  // ----- Membership editor (inline UI only for now)
-  const MembershipEditor: React.FC<{
-    value: Membership[]; onChange: (v: Membership[]) => void;
-  }> = ({ value, onChange }) => {
-    const [orgPath, setOrgPath] = useState("");
-    const [positionKey, setPositionKey] = useState("");
-
-    const add = () => {
-      const org_path = orgPath.trim();
-      const position_key = positionKey.trim();
-      if (!org_path || !position_key) return;
-      onChange([...(value || []), { org_path, position_key }]);
-      setOrgPath(""); setPositionKey("");
-    };
-    const remove = (i: number) => onChange(value.filter((_, idx) => idx !== i));
-
-    return (
-      <div className="space-y-2">
-        <div className="flex gap-2">
-          <input
-            className="border rounded p-1 text-sm flex-1"
-            placeholder="/club/cpsk"
-            value={orgPath}
-            onChange={(e) => setOrgPath(e.target.value)}
-          />
-          <input
-            className="border rounded p-1 text-sm w-40"
-            placeholder="head"
-            value={positionKey}
-            onChange={(e) => setPositionKey(e.target.value)}
-            list="position-keys"
-          />
-          <datalist id="position-keys">
-            {positions.map((p) => (
-              <option key={p.key} value={p.key}>
-                {(p.display && (p.display.en || Object.values(p.display)[0])) || p.key}
-              </option>
-            ))}
-          </datalist>
-          <button
-            type="button"
-            onClick={add}
-            className="px-2 py-1 text-xs border rounded flex items-center gap-1"
-            title="Add membership"
-          >
-            <PlusIcon /> Add
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {value.map((m, i) => (
-            <span key={i} className="inline-flex items-center gap-2 bg-gray-100 text-xs px-2 py-1 rounded">
-              {membershipLabel(m, positions)}
-              <button onClick={() => remove(i)} className="text-red-600" title="Remove">×</button>
-            </span>
-          ))}
-        </div>
-        <div className="text-[11px] text-gray-500">
-          Note: This editor is UI-only here. Persisting memberships requires dedicated APIs.
-        </div>
-      </div>
-    );
-  };
+  // Membership management moved to Roles page; keep tags view-only here.
 
   // ----- UI
   if (loading && users.length === 0) return <div className="p-4 text-gray-600">Loading users…</div>;
@@ -308,7 +240,6 @@ useEffect(() => {
             <th className="p-3">Name</th>
             <th className="p-3">Email</th>
             <th className="p-3">Memberships</th>
-            <th className="p-3">Permissions</th>
             <th className="p-3">Actions</th>
           </tr>
         </thead>
@@ -336,14 +267,7 @@ useEffect(() => {
                       )}
                     </div>
                   </td>
-                  <td className="p-3">
-                    <button
-                      onClick={() => handleViewPermissions(user)}
-                      className="text-blue-600 hover:underline"
-                    >
-                      View
-                    </button>
-                  </td>
+                  {/* Permissions column removed */}
                   <td className="p-3">
                     <div className="flex gap-3">
                       <button
@@ -364,7 +288,7 @@ useEffect(() => {
 
                 {expandedUserKey === key && (
                   <tr>
-                    <td colSpan={6} className="p-3 bg-gray-50">
+                    <td colSpan={5} className="p-3 bg-gray-50">
                       {!editing ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div><strong>ID:</strong> {user.id ?? user._id}</div>
@@ -416,13 +340,19 @@ useEffect(() => {
                             />
                           </div>
 
-                          {/* Memberships (UI only for now) */}
                           <div className="md:col-span-2">
                             <label className="block text-sm font-medium mb-1">Memberships</label>
-                            <MembershipEditor
-                              value={editableUser.memberships ?? []}
-                              onChange={(v) => setEditableUser({ ...editableUser, memberships: v })}
-                            />
+                            <div className="text-sm text-gray-600">View-only here. Manage assignments in Roles page.</div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {(editableUser.memberships ?? []).filter(m => m.active).map((m, i) => (
+                                <span key={i} className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded">
+                                  {membershipLabel(m, positions)}
+                                </span>
+                              ))}
+                              {(editableUser.memberships ?? []).filter(m => m.active).length === 0 && (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </div>
                           </div>
 
                           <div className="md:col-span-2 flex gap-2 mt-2">
@@ -468,11 +398,7 @@ useEffect(() => {
         {loading && <span className="text-sm text-gray-500">Working…</span>}
       </div>
 
-      <PermissionModal
-        visible={showModal}
-        onClose={() => setShowModal(false)}
-        permissions={selectedPermissions}
-      />
+      {/* Permissions modal removed */}
     </div>
   );
 };

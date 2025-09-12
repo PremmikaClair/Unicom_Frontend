@@ -36,6 +36,14 @@ func RegisterAuthRoutes(r fiber.Router) {
 }
 
 // POST /api/auth/login  -> { access_token }
+// @Summary      Login
+// @Description  Authenticates user and returns JWT access token
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        loginReq  body      loginReq  true  "Login credentials"
+// @Success      200       {object}  loginResp
+// @Router       /api/auth/login [post]
 func loginHandler(c *fiber.Ctx) error {
 	var req loginReq
 	if err := c.BodyParser(&req); err != nil {
@@ -70,6 +78,14 @@ func loginHandler(c *fiber.Ctx) error {
 }
 
 
+// @Summary      Get current user info
+// @Description  Returns claims of the authenticated user
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        Authorization  header    string  true  "Bearer JWT token"
+// @Success      200           {object}  map[string]interface{}
+// @Router       /api/auth/me [get]
 func meHandler(c *fiber.Ctx) error {
     auth := c.Get("Authorization")
     if !strings.HasPrefix(auth, "Bearer ") {

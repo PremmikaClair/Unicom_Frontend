@@ -34,7 +34,7 @@ func main() {
 	allowed := getEnv("FRONTEND_ORIGINS", "http://localhost:5173")
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(strings.Split(allowed, ","), ","),
-		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		ExposeHeaders:    "Authorization",
 		AllowCredentials: true,
@@ -66,6 +66,10 @@ func main() {
 
 
 	api.RegisterOrgRoutes(apiGroup)
+
+	// after other feature routes
+	api.RegisterMembershipRoutes(apiGroup)
+	api.RegisterOrgAdminRoutes(apiGroup) // CRUD for org nodes (node-level)
 	// Swagger
 	app.Get("/docs/*", swagger.HandlerDefault)
 

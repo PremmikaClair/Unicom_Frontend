@@ -5,13 +5,23 @@ import type {
   User,
   Membership,
   Position,
-  TagItem,
   AbilitiesResp,
   PostDoc,
   Paged,
+  OrgUnit,
+  MembershipDoc,
+  MembershipWithUser
 } from "../types";
 
-const BASE = "/api";
+const BASE = (import.meta as any).env?.VITE_API_BASE_URL || "/api";
+const normalizeMembership = (doc: MembershipDoc): Membership => ({
+  _id: (doc as any)._id,
+  org_path: (doc as any).org_path,
+  position_key: (doc as any).position_key,
+  // Prefer boolean 'active' if provided by backend; fallback to status string
+  active: typeof (doc as any).active === 'boolean' ? (doc as any).active : (doc as any).status ? (doc as any).status !== 'inactive' : true,
+});
+
 
 // ---------- token management ----------
 let accessToken: string | null = localStorage.getItem("access_token");
@@ -101,20 +111,24 @@ export async function getUsersPaged(params?: { limit?: number; cursor?: string; 
   return apiFetch<Paged<User>>(`/users?${qs.toString()}`);
 }
 
-export async function getUserById(id: number) {
-  return apiFetch<User>(`/users/${id}`);
+export async function getUser(id: string | number) {
+  return apiFetch<User>(`/users/${encodeURIComponent(String(id))}`);
 }
 
 export async function createUser(payload: Partial<User>) {
   return apiFetch<User>(`/users`, { method: "POST", body: JSON.stringify(payload) });
 }
 
-export async function updateUser(id: number, patch: Partial<User>) {
-  return apiFetch<User>(`/users/${id}`, { method: "PUT", body: JSON.stringify(patch) });
+export async function updateUser(id: string | number, patch: Partial<User>) {
+  const nid = Number(id);
+  if (!Number.isFinite(nid) || nid <= 0) {
+    throw new Error("User is missing a valid numeric id");
+  }
+  return apiFetch<User>(`/users/${encodeURIComponent(String(nid))}`, { method: "PUT", body: JSON.stringify(patch) });
 }
 
-export async function deleteUser(id: number) {
-  await apiFetch<void>(`/users/${id}`, { method: "DELETE" });
+export async function deleteUser(id: string | number) {
+  await apiFetch<void>(`/users/${encodeURIComponent(String(id))}`, { method: "DELETE" });
 }
 
 // legacy/flattened permissions endpoint (if enabled)
@@ -126,26 +140,6 @@ export async function getUserPermissions(userId: number) {
 
 export async function getPositions(): Promise<Position[]> {
   return apiFetch<Position[]>(`/positions`);
-}
-
-// ======================= Memberships by student_id =======================
-
-export async function getMembershipsRaw(studentId: string) {
-  return apiFetch<{ student_id: string; user_id: string; memberships: Membership[] }>(
-    `/users/${encodeURIComponent(studentId)}/memberships?view=raw`
-  );
-}
-
-export async function getMembershipTags(studentId: string, lang: "en" | "th" | string = "en") {
-  return apiFetch<{ student_id: string; user_id: string; tags: TagItem[] }>(
-    `/users/${encodeURIComponent(studentId)}/memberships?view=tags&lang=${encodeURIComponent(lang)}`
-  );
-}
-
-export async function getMembershipCodes(studentId: string, lang: "en" | "th" | string = "en") {
-  return apiFetch<{ student_id: string; user_id: string; codes: { org_path: string; position_key: string; code: string }[] }>(
-    `/users/${encodeURIComponent(studentId)}/memberships?view=codes&lang=${encodeURIComponent(lang)}`
-  );
 }
 
 // ======================= Abilities (MVP) =======================
@@ -217,8 +211,12 @@ import type { OrgUnitNode, Policy } from "../types";
 export async function getOrgTree(): Promise<OrgUnitNode[]> {
   // Adjust the path to your backend route. If your server exposes /org/units/tree, use that.
   return apiFetch<OrgUnitNode[]>("/org/units/tree");
+
 }
 
+export async function createOrgUnit(node: OrgUnit) {
+  return apiFetch<OrgUnit>(`/org/units/node`, { method: "POST", body: JSON.stringify(node) });
+}
 /* -------- Policies (CRUD) -------- */
 export async function listPolicies(params?: { org_prefix?: string; position_key?: string }) {
   const qs = new URLSearchParams();
@@ -247,4 +245,71 @@ export async function deletePolicy(org_prefix: string, position_key?: string) {
   const qs = new URLSearchParams({ org_prefix });
   if (position_key) qs.set("position_key", position_key);
   await apiFetch<void>(`/policies?${qs.toString()}`, { method: "DELETE" });
+}
+
+
+/* -------- MEMBERSHIPS (CRUD) -------- */
+
+// ===== READ =====
+export async function getMembershipsRaw(studentId: string) {
+  const arr = await apiFetch<MembershipDoc[]>(
+    `/memberships?user=${encodeURIComponent(studentId)}`
+  );
+  return {
+    student_id: studentId,
+    memberships: (arr || []).map(normalizeMembership),
+  };
+}
+
+// List memberships by org path (active=true by default on the backend)
+export async function listMembershipsByOrg(org_path: string) {
+  const qs = new URLSearchParams({ org_path });
+  const arr = await apiFetch<MembershipDoc[]>(`/memberships?${qs.toString()}`);
+  return (arr || []).map(normalizeMembership);
+}
+
+export async function listMembershipsWithUsers(org_path: string, active: boolean = true) {
+  const qs = new URLSearchParams({ org_path });
+  if (!active) qs.set("active", "all");
+  const arr = await apiFetch<any[]>(`/memberships/users?${qs.toString()}`);
+  return (arr || []).map((row) => {
+    const m = normalizeMembership(row as any);
+    const user = row.user as any;
+    const out: MembershipWithUser = { ...m } as any;
+    if (user) {
+      out.user = {
+        _id: user._id,
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        student_id: user.student_id,
+      };
+    }
+    if ((row as any).user_id) out.user_id = (row as any).user_id;
+    return out;
+  });
+}
+
+// ===== CREATE =====
+export async function createMembership(body: {
+  user_ref: string;           // student_id OR _id OR numeric id
+  org_path: string;
+  position_key: string;
+  joined_at?: string;
+}) {
+  const doc = await apiFetch<MembershipDoc>(`/memberships`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return normalizeMembership(doc);
+}
+
+// ===== DEACTIVATE =====
+export async function deactivateMembership(id: string) {
+  const doc = await apiFetch(`/memberships/${id}`, {
+  method: "PATCH",
+  body: JSON.stringify({ active: false }),
+});
+  return normalizeMembership(doc);
 }

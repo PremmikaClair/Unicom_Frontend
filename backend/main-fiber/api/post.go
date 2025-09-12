@@ -285,6 +285,16 @@ func isPostVisibleToViewer(p *Post, userOID primitive.ObjectID, exact, subtree [
 //
 
 // GET /api/posts?page=&limit[&all=true]
+// @Summary      List posts
+// @Description  List posts with pagination and visibility
+// @Tags         posts
+// @Accept       json
+// @Produce      json
+// @Param        page   query     int     false "Page number"
+// @Param        limit  query     int     false "Page size"
+// @Param        all    query     bool    false "Show all (moderation)"
+// @Success      200    {array}   Post
+// @Router       /api/posts [get]
 func listPosts(c *fiber.Ctx) error {
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	limit, _ := strconv.Atoi(c.Query("limit", "20"))
@@ -339,6 +349,15 @@ func listPosts(c *fiber.Ctx) error {
 }
 
 // GET /api/posts/:id  (optional visibility check)
+// @Summary      Get post
+// @Description  Get post by ID (with visibility check)
+// @Tags         posts
+// @Accept       json
+// @Produce      json
+// @Param        id     path      string   true  "Post ID"
+// @Param        all    query     bool     false "Show all (moderation)"
+// @Success      200    {object}  Post
+// @Router       /api/posts/{id} [get]
 func getPost(c *fiber.Ctx) error {
 	col := postsColl()
 
@@ -364,6 +383,14 @@ func getPost(c *fiber.Ctx) error {
 }
 
 // POST /api/posts
+// @Summary      Create post
+// @Description  Create a new post
+// @Tags         posts
+// @Accept       json
+// @Produce      json
+// @Param        createPostDTO  body      createPostDTO  true  "Post info"
+// @Success      201    {object}  Post
+// @Router       /api/posts [post]
 func createPost(c *fiber.Ctx) error {
 	col := postsColl()
 
@@ -404,6 +431,15 @@ func createPost(c *fiber.Ctx) error {
 }
 
 // PUT /api/posts/:id
+// @Summary      Update post
+// @Description  Update post fields
+// @Tags         posts
+// @Accept       json
+// @Produce      json
+// @Param        id            path      string         true  "Post ID"
+// @Param        updatePostDTO body      updatePostDTO  true  "Fields to update"
+// @Success      200    {object}  Post
+// @Router       /api/posts/{id} [put]
 func updatePost(c *fiber.Ctx) error {
 	col := postsColl()
 
@@ -448,6 +484,12 @@ func updatePost(c *fiber.Ctx) error {
 }
 
 // DELETE /api/posts/:id
+// @Summary      Delete post
+// @Description  Delete post by ID
+// @Tags         posts
+// @Param        id     path      string   true  "Post ID"
+// @Success      204    "No Content"
+// @Router       /api/posts/{id} [delete]
 func deletePost(c *fiber.Ctx) error {
 	col := postsColl()
 
@@ -467,6 +509,15 @@ type likeDTO struct {
 }
 
 // POST /api/posts/:id/like
+// @Summary      Like post
+// @Description  Like a post by ID
+// @Tags         posts
+// @Accept       json
+// @Produce      json
+// @Param        id      path      string   true  "Post ID"
+// @Param        likeDTO body      likeDTO  true  "User ID to like"
+// @Success      200     {object}  Post
+// @Router       /api/posts/{id}/like [post]
 func likePost(c *fiber.Ctx) error {
 	col := postsColl()
 
@@ -500,6 +551,15 @@ func likePost(c *fiber.Ctx) error {
 }
 
 // POST /api/posts/:id/unlike
+// @Summary      Unlike post
+// @Description  Unlike a post by ID
+// @Tags         posts
+// @Accept       json
+// @Produce      json
+// @Param        id      path      string   true  "Post ID"
+// @Param        likeDTO body      likeDTO  true  "User ID to unlike"
+// @Success      200     {object}  Post
+// @Router       /api/posts/{id}/unlike [post]
 func unlikePost(c *fiber.Ctx) error {
 	col := postsColl()
 
@@ -539,6 +599,12 @@ func unlikePost(c *fiber.Ctx) error {
 }
 
 // POST /api/posts/:id/hide
+// @Summary      Hide post
+// @Description  Hide a post by ID
+// @Tags         posts
+// @Param        id     path      string   true  "Post ID"
+// @Success      204    "No Content"
+// @Router       /api/posts/{id}/hide [post]
 func hidePost(c *fiber.Ctx) error {
 	col := postsColl()
 
@@ -556,6 +622,12 @@ func hidePost(c *fiber.Ctx) error {
 }
 
 // POST /api/posts/:id/unhide
+// @Summary      Unhide post
+// @Description  Unhide a post by ID
+// @Tags         posts
+// @Param        id     path      string   true  "Post ID"
+// @Success      204    "No Content"
+// @Router       /api/posts/{id}/unhide [post]
 func unhidePost(c *fiber.Ctx) error {
 	col := postsColl()
 

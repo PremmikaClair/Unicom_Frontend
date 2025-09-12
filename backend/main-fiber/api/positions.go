@@ -98,18 +98,31 @@ func GetPositionByKey(c *fiber.Ctx) error {
 // @Success 201 {object} Position
 // @Router /positions [post]
 func CreatePosition(c *fiber.Ctx) error {
-	var in Position
-	if err := c.BodyParser(&in); err != nil {
-		return c.Status(400).SendString("invalid body")
-	}
+    var in Position
+    if err := c.BodyParser(&in); err != nil {
+        return c.Status(400).SendString("invalid body")
+    }
 	in.Key = strings.TrimSpace(in.Key)
 	if in.Key == "" {
 		return c.Status(400).SendString("key is required")
 	}
 	if in.Display == nil { in.Display = map[string]string{"en": in.Key} }
 	if in.Status == "" { in.Status = "active" }
-	in.CreatedAt = time.Now()
-	in.UpdatedAt = in.CreatedAt
+    in.CreatedAt = time.Now()
+    in.UpdatedAt = in.CreatedAt
+
+    // authz: require position:create at scope.org_path (default "/")
+    ownerPath := in.Scope.OrgPath
+    if strings.TrimSpace(ownerPath) == "" { ownerPath = "/" }
+    if uid, err := userIDFromBearer(c); err == nil {
+        ctxA, cancelA := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancelA()
+        ok, err := Can(ctxA, uid, "position:create", ownerPath)
+        if err != nil { return c.Status(500).SendString("authz error") }
+        if !ok { return c.Status(403).SendString("forbidden: position:create not allowed at this path") }
+    } else {
+        return err
+    }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -151,10 +164,10 @@ func UpdatePosition(c *fiber.Ctx) error {
 	if patch.Constraints.TermDays != nil { set["constraints.term_days"] = patch.Constraints.TermDays }
 	if patch.Status != "" { set["status"] = patch.Status }
 	if len(set) == 0 { return c.Status(400).SendString("no fields to update") }
-	set["updated_at"] = time.Now()
+    set["updated_at"] = time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 	res := posCol().FindOneAndUpdate(ctx, bson.M{"key": key}, bson.M{"$set": set}, opts)

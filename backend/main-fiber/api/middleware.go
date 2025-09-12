@@ -1,10 +1,8 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
-	"go.mongodb.org/mongo-driver/mongo"
-	"github.com/pllus/main-fiber/rbac"
+    "github.com/gofiber/fiber/v2"
+    "github.com/golang-jwt/jwt/v5"
 )
 
 func RequireAuth() fiber.Handler {
@@ -42,15 +40,17 @@ func RequireRole(role string) fiber.Handler {
 }
 
 
-func Require(db *mongo.Database, action, resource, orgParam string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		uid := c.Locals("user_id")
-		org := c.Params(orgParam)
-		ok, err := rbac.Can(c.Context(), db, rbac.CheckInput{
-			UserID: uid.(string), OrgPath: org, Action: action, Resource: resource,
-		})
-		if err != nil { return fiber.ErrInternalServerError }
-		if !ok { return fiber.ErrForbidden }
-		return c.Next()
-	}
+// RequireAbility enforces a single action at an org path (taken from route param by name).
+// Example: app.Post("/org/:path/members", RequireAbility("membership:assign", "path"), handler)
+func RequireAbility(action, orgParam string) fiber.Handler {
+    return func(c *fiber.Ctx) error {
+        uid, err := userIDFromBearer(c)
+        if err != nil { return err }
+        org := c.Params(orgParam)
+        if org == "" { org = c.Query("org_path") }
+        ok, err := Can(c.Context(), uid, action, org)
+        if err != nil { return fiber.ErrInternalServerError }
+        if !ok { return fiber.ErrForbidden }
+        return c.Next()
+    }
 }

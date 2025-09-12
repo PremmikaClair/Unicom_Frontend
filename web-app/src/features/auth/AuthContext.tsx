@@ -43,8 +43,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     console.log("📡 Calling backend /auth/login...");
     const res = await loginWithPassword(email, password);
     console.log("📦 Got response:", res);
-    setToken(res.access_token);
-    setUser(res.user ?? ({ id: "self", email } as any));
+    setToken(res.access_token ?? (res as any).accessToken ?? null);
+    try {
+      const me = await getMe();
+      setUser(me as any);
+    } catch {
+      setUser(res.user ?? ({ id: "self", email } as any));
+    }
     console.log("✅ Token stored, user set");
   };
 

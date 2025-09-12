@@ -1,20 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import type { OrgUnitNode, Policy } from "../../types";
-import { getOrgTree, listPolicies, createPolicy, upsertPolicy, deletePolicy } from "../../services/api";
+import type { OrgUnitNode, Policy, Position, MembershipWithUser, User } from "../../types";
+import { getOrgTree, listPolicies, createPolicy, upsertPolicy, deletePolicy, getPositions, getUsersPaged, createMembership, deactivateMembership, listMembershipsWithUsers } from "../../services/api";
+import { apiFetch } from "../../services/api";
+import useAbilities from "../../hooks/useAbilities";
 
-// MVP action catalog
+// Action catalog aligned with backend simple-mode allow-list
 const ALL_ACTIONS = [
-  // Posts
-  "post:read",
   "post:create",
-  "post:edit:own",
-  "post:delete:own",
   "post:moderate",
-  "post:pin",
-  // Events
   "event:create",
-  "event:edit:own",
-  "event:delete:own",
+  "event:manage",
+  "membership:assign",
+  "membership:revoke",
+  "position:create",
+  "policy:write",
 ];
 
 const ScopeOptions = [
@@ -169,6 +168,19 @@ const OrgPoliciesPage: React.FC = () => {
   const [loadingTree, setLoadingTree] = useState(false);
   const [loadingPolicies, setLoadingPolicies] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [assignQuery, setAssignQuery] = useState("");
+  const [assignResults, setAssignResults] = useState<User[]>([]);
+  const [selectedUserKeys, setSelectedUserKeys] = useState<Record<string, boolean>>({});
+  const [assignPosKey, setAssignPosKey] = useState("");
+  const [loadingAssign, setLoadingAssign] = useState(false);
+  const [orgMemberships, setOrgMemberships] = useState<MembershipWithUser[]>([]);
+  // positions inspector removed per request
+
+  // Abilities for the selected node
+  const { abilities, loading: loadingAbilities, refetch: refetchAbilities } = useAbilities(selectedOrg);
+  const canCreatePosition = abilities["position:create"] === true;
+  const canPolicyWrite = abilities["policy:write"] === true;
 
   // Load tree on mount
   useEffect(() => {
@@ -185,6 +197,13 @@ const OrgPoliciesPage: React.FC = () => {
       } finally {
         setLoadingTree(false);
       }
+    })();
+  }, []);
+
+  // Load positions (for assignment options)
+  useEffect(() => {
+    (async () => {
+      try { setPositions(await getPositions()); } catch {}
     })();
   }, []);
 
@@ -207,10 +226,18 @@ const OrgPoliciesPage: React.FC = () => {
     })();
   }, [selectedOrg]);
 
+  // Load memberships at selected org
+  const refreshOrgMemberships = async () => {
+    if (!selectedOrg) { setOrgMemberships([]); return; }
+    try { setOrgMemberships(await listMembershipsWithUsers(selectedOrg)); } catch { setOrgMemberships([]); }
+  };
+  useEffect(() => { refreshOrgMemberships(); /* eslint-disable react-hooks/exhaustive-deps */ }, [selectedOrg]);
+
   const onCreate = async (p: Policy) => {
     const saved = await createPolicy(p);
     setPolicies((prev) => [saved, ...prev]);
     alert("Policy created");
+    refetchAbilities();
   };
 
   const onUpsert = async (p: Policy) => {
@@ -230,6 +257,7 @@ const OrgPoliciesPage: React.FC = () => {
       return [saved, ...prev];
     });
     alert("Policy upserted");
+    refetchAbilities();
   };
 
   const onDelete = async (p: Policy) => {
@@ -238,13 +266,91 @@ const OrgPoliciesPage: React.FC = () => {
     setPolicies((prev) => prev.filter((x) => !(x.position_key === p.position_key && x.where.org_prefix === p.where.org_prefix)));
   };
 
-  // Later: derive canEdit from abilities (e.g., abilities["role:create_child"] at selectedOrg)
-  const canEdit = true; // MVP: allow editing; flip to ability check later
+  const canEdit = canPolicyWrite;
 
   const selectedPolicies = useMemo(
     () => policies.filter((p) => selectedOrg.startsWith(p.where.org_prefix)),
     [policies, selectedOrg]
   );
+
+  // Positions usable at this node
+  const usablePositions = useMemo(() => {
+    const path = selectedOrg || "/";
+    const norm = (s?: string) => {
+      if (!s || s === "/") return "/";
+      return (s.startsWith("/") ? s : "/" + s).replace(/\/$/, "");
+    };
+    const isUsable = (p: Position) => {
+      const scope = p.scope || {} as any;
+      const owner = norm(scope.org_path);
+      const inherit = !!scope.inherit;
+      if (!owner || owner === "/") return true;
+      if (owner === norm(path)) return true;
+      if (inherit && norm(path).startsWith(owner + (owner === "/" ? "" : ""))) {
+        // owner subtree
+        return norm(path) === owner || norm(path).startsWith(owner + "/");
+      }
+      return false;
+    };
+    return positions.filter(isUsable);
+  }, [positions, selectedOrg]);
+
+  // Search users for assignment
+  const runSearch = async () => {
+    const q = assignQuery.trim(); if (!q) { setAssignResults([]); return; }
+    try {
+      setLoadingAssign(true);
+      const { items } = await getUsersPaged({ q, limit: 10 });
+      setAssignResults(items as unknown as User[]);
+      setSelectedUserKeys({});
+    } catch (e) {
+      setAssignResults([]);
+    } finally {
+      setLoadingAssign(false);
+    }
+  };
+
+  const toggleSelectUser = (u: User, on?: boolean) => {
+    const key = u._id || u.email || String(u.id);
+    setSelectedUserKeys(prev => ({ ...prev, [key]: on ?? !prev[key] }));
+  };
+
+  const assignSelectedUsers = async () => {
+    const pos = assignPosKey.trim();
+    if (!pos) { alert('Select a position'); return; }
+    if (!canPolicyWrite && !abilities["membership:assign"]) { alert("No permission to assign here"); return; }
+    const picked = assignResults.filter(u => selectedUserKeys[u._id || u.email || String(u.id)]);
+    if (picked.length === 0) { alert('Select at least one user'); return; }
+    setLoadingAssign(true);
+    try {
+      const tasks = picked.map(u => {
+        const ref = u.student_id || String(u.id) || (u._id || "");
+        return createMembership({ user_ref: ref, org_path: selectedOrg, position_key: pos });
+      });
+      const res = await Promise.allSettled(tasks);
+      const ok = res.filter(r => r.status === 'fulfilled').length;
+      const fail = res.length - ok;
+      await refreshOrgMemberships();
+      alert(`Assigned ${ok} user(s)${fail ? `, ${fail} failed` : ''}`);
+      setSelectedUserKeys({});
+    } catch (e: any) {
+      alert(e?.message || 'Assignment failed');
+    } finally {
+      setLoadingAssign(false);
+    }
+  };
+
+  const revokeMembership = async (m: any) => {
+    if (!m._id) return;
+    if (!abilities["membership:revoke"]) { alert('No permission'); return; }
+    if (!confirm(`Deactivate ${m.position_key} at ${m.org_path}?`)) return;
+    try {
+      await deactivateMembership(m._id);
+      await refreshOrgMemberships();
+    } catch (e: any) {
+      alert(e?.message || 'Failed to revoke');
+    }
+  };
 
   return (
     <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -268,6 +374,91 @@ const OrgPoliciesPage: React.FC = () => {
 
       {/* Right: Policies */}
       <div className="md:col-span-2 border rounded p-3 space-y-4">
+        {/* Membership assignments at selected node */}
+        <div className="border rounded p-3 space-y-3">
+          <h3 className="font-medium">Assignments at {selectedOrg}</h3>
+          <div className="text-xs text-gray-600">Search a user to assign a position at this node.</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input className="border rounded px-2 py-1 text-sm flex-1 min-w-[240px]" placeholder="Search by name / email / student id" value={assignQuery} onChange={e => setAssignQuery(e.target.value)} />
+            <button onClick={runSearch} disabled={loadingAssign} className="px-2 py-1 text-xs border rounded">Search</button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-sm text-gray-700">Assign as</label>
+            <select className="border rounded px-2 py-1 text-sm" value={assignPosKey} onChange={e => setAssignPosKey(e.target.value)}>
+              <option value="">Select position…</option>
+              {usablePositions.map(p => (
+                <option key={p.key} value={p.key}>{(p.display && (p.display.en || Object.values(p.display)[0])) || p.key}</option>
+              ))}
+            </select>
+            {!abilities["membership:assign"] && (
+              <span className="text-xs text-orange-600">You don’t have permission to assign here.</span>
+            )}
+          </div>
+          {assignResults.length > 0 && (
+            <div className="mt-2 border rounded">
+              {assignResults.map(u => {
+                const key = u._id || u.email || String(u.id);
+                const checked = !!selectedUserKeys[key];
+                return (
+                  <label key={key} className="flex items-center justify-between px-2 py-1 border-t first:border-t-0">
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" checked={checked} onChange={(e) => toggleSelectUser(u, e.target.checked)} />
+                      <div className="text-sm">{u.firstName} {u.lastName} <span className="text-gray-500">({u.email})</span></div>
+                    </div>
+                    <div className="text-xs text-gray-500">sid: {u.student_id || '-'}</div>
+                  </label>
+                );
+              })}
+              <div className="flex items-center justify-end gap-2 p-2">
+                <button onClick={assignSelectedUsers} disabled={!abilities["membership:assign"] || loadingAssign || !assignPosKey} className={`px-2 py-1 text-xs border rounded ${!abilities["membership:assign"] ? 'opacity-50 cursor-not-allowed' : ''}`}>Assign selected</button>
+              </div>
+            </div>
+          )}
+
+          {/* Current memberships at this node */}
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-sm font-medium">Active memberships here</div>
+              <div className="text-xs text-gray-600">Active users (any position): {Array.from(new Set(orgMemberships.map(m => (m.user?._id || m.user?.email || String((m as any).user_id || m._id))))).length}</div>
+            </div>
+            <div className="overflow-x-auto border rounded">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="p-2 text-left">Name</th>
+                    <th className="p-2 text-left">Student ID</th>
+                    <th className="p-2 text-left">Position</th>
+                    <th className="p-2 text-left w-24">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orgMemberships.length ? (
+                    orgMemberships.map((m, i) => (
+                      <tr key={m._id || i} className="border-t">
+                        <td className="p-2">{((m.user?.firstName || '') + ' ' + (m.user?.lastName || '')).trim() || m.user?.email || 'User'}</td>
+                        <td className="p-2">{m.user?.student_id || '-'}</td>
+                        <td className="p-2">{m.position_key}</td>
+                        <td className="p-2">
+                          <button onClick={() => revokeMembership(m)} disabled={!abilities["membership:revoke"]} className={`text-red-600 text-xs ${!abilities["membership:revoke"] ? 'opacity-50 cursor-not-allowed' : ''}`}>Revoke</button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr><td colSpan={4} className="p-3 text-gray-500">No active memberships</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {/* Create Position (org-scoped) */}
+        <div className="border rounded p-3">
+          <h3 className="font-medium mb-2">Create Position at node</h3>
+          <div className="flex items-center gap-2">
+            <CreatePositionInline selectedOrg={selectedOrg} canCreate={canCreatePosition} />
+            {loadingAbilities && <span className="text-xs text-gray-500">Checking permissions…</span>}
+          </div>
+        </div>
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Policies</h2>
           {loadingPolicies && <span className="text-xs text-gray-500">Loading…</span>}
@@ -275,22 +466,30 @@ const OrgPoliciesPage: React.FC = () => {
 
         {/* Create / Upsert */}
         <div className="grid md:grid-cols-2 gap-6">
-          <div className="border rounded p-3">
-            <h3 className="font-medium mb-2">Create Policy</h3>
-            <PolicyForm
-              selectedOrg={selectedOrg}
-              onSubmit={onCreate}
-              mode="create"
-            />
-          </div>
-          <div className="border rounded p-3">
-            <h3 className="font-medium mb-2">Upsert Policy (by position_key + org_prefix + scope)</h3>
-            <PolicyForm
-              selectedOrg={selectedOrg}
-              onSubmit={onUpsert}
-              mode="upsert"
-            />
-          </div>
+          {canPolicyWrite ? (
+            <>
+              <div className="border rounded p-3">
+                <h3 className="font-medium mb-2">Create Policy</h3>
+                <PolicyForm
+                  selectedOrg={selectedOrg}
+                  onSubmit={onCreate}
+                  mode="create"
+                />
+              </div>
+              <div className="border rounded p-3">
+                <h3 className="font-medium mb-2">Upsert Policy (by position_key + org_prefix + scope)</h3>
+                <PolicyForm
+                  selectedOrg={selectedOrg}
+                  onSubmit={onUpsert}
+                  mode="upsert"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="border rounded p-3 text-sm text-gray-600">
+              You don’t have permission to edit policies at {selectedOrg}.
+            </div>
+          )}
         </div>
 
         {/* List */}
@@ -343,11 +542,42 @@ const OrgPoliciesPage: React.FC = () => {
               )}
             </tbody>
           </table>
-          {!canEdit && <div className="text-xs text-orange-600 mt-2">Editing disabled (future: enable per-subtree based on abilities)</div>}
+          {!canEdit && <div className="text-xs text-orange-600 mt-2">Editing disabled by permissions at {selectedOrg}</div>}
         </div>
+
+        {/* positions inspector removed */}
       </div>
     </div>
   );
 };
 
 export default OrgPoliciesPage;
+
+// Inline create position form
+const CreatePositionInline: React.FC<{ selectedOrg: string; canCreate: boolean }> = ({ selectedOrg, canCreate }) => {
+  const [key, setKey] = useState("");
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const create = async () => {
+    if (!key.trim()) return;
+    if (!canCreate) { alert(`You don't have permission at ${selectedOrg}.`); return; }
+    try {
+      setSaving(true);
+      await apiFetch(`/positions`, {
+        method: 'POST',
+        body: JSON.stringify({ key: key.trim(), display: { en: label.trim() || key.trim() }, scope: { org_path: selectedOrg, inherit: true }, status: 'active' })
+      });
+      setKey(""); setLabel("");
+      alert('Position created');
+    } catch (e: any) {
+      alert(e?.message || 'Failed to create position');
+    } finally { setSaving(false); }
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <input className="border rounded px-2 py-1 text-sm" placeholder="position key (e.g., head)" value={key} onChange={e => setKey(e.target.value)} />
+      <input className="border rounded px-2 py-1 text-sm" placeholder="label (optional)" value={label} onChange={e => setLabel(e.target.value)} />
+      <button onClick={create} disabled={!canCreate || saving} title={canCreate ? 'Create position' : `You don't have permission at ${selectedOrg}.`} className={`px-2 py-1 text-xs border rounded ${!canCreate ? 'opacity-50 cursor-not-allowed' : ''}`}>Create</button>
+    </div>
+  );
+};
