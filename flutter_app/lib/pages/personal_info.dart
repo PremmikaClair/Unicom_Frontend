@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../components/bottom_nav.dart';
 import 'app_shell.dart';
+import 'allergies.dart';
+import 'profile_page.dart';
+import 'role_page.dart';
+import 'phone_page.dart';
 
 class PersonalInfoPage extends StatelessWidget {
   final String? userId;
@@ -33,17 +37,23 @@ class PersonalInfoPage extends StatelessWidget {
 
       appBar: AppBar(
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: _brandGreen),
-          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back, color: PersonalInfoPage._brandGreen),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            );
+          },
         ),
         title: const Text(
           'Personal Information',
           style: TextStyle(
-            color: _brandGreen,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF006400),
           ),
         ),
       ),
@@ -79,8 +89,8 @@ class PersonalInfoPage extends StatelessWidget {
                 name,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
                   color: Colors.black,
                 ),
               ),
@@ -90,7 +100,10 @@ class PersonalInfoPage extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '$username@ku.th',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.grey,
+              ),
             ),
 
             const SizedBox(height: 20),
@@ -103,19 +116,46 @@ class PersonalInfoPage extends StatelessWidget {
                 color: _mintBg,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Column(
+              child: Column(
                 children: [
-                  _InfoTile(icon: Icons.badge_outlined, title: 'USER ID'),
-                  Divider(height: 0),
-                  _InfoTile(icon: Icons.person_outline, title: 'FIRST NAME', chevron: true),
-                  Divider(height: 0),
-                  _InfoTile(icon: Icons.person_2_outlined, title: 'LAST NAME', chevron: true),
-                  Divider(height: 0),
-                  _InfoTile(icon: Icons.phone_rounded, title: 'PHONE', chevron: true),
-                  Divider(height: 0),
-                  _InfoTile(icon: Icons.info_outline, title: 'ALLERGIES', chevron: true),
-                  Divider(height: 0),
-                  _InfoTile(icon: Icons.group_outlined, title: 'ROLES', chevron: true),
+                  const _InfoTile(icon: Icons.badge_outlined, title: 'User id'),
+                  const Divider(height: 0),
+                  const _InfoTile(icon: Icons.person_outline, title: 'First name', chevron: true),
+                  const Divider(height: 0),
+                  const _InfoTile(icon: Icons.person_2_outlined, title: 'Last name', chevron: true),
+                  const Divider(height: 0),
+                  _InfoTile(
+                    icon: Icons.phone_rounded,
+                    title: 'Phone',
+                    chevron: true,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => PhonePage()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 0),
+                  _InfoTile(
+                    icon: Icons.info_outline,
+                    title: 'Allergies',
+                    chevron: true,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const AllergiesPage()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 0),
+                  _InfoTile(
+                    icon: Icons.group_outlined,
+                    title: 'Roles',
+                    chevron: true,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const RolePage()),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -144,28 +184,38 @@ class _InfoTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final bool chevron;
+  final VoidCallback? onTap;
 
   const _InfoTile({
     required this.icon,
     required this.title,
     this.chevron = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       dense: true,
-      leading: Icon(icon, color: Colors.black87),
-      title: Text(title),
-      trailing: chevron ? const Icon(Icons.chevron_right) : null,
-      onTap: chevron
-          ? () {
-              // TODO: นำทางไปแก้ไข field นั้น ๆ
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$title (mock)')),
-              );
-            }
-          : null,
+      leading: Icon(icon, color: PersonalInfoPage._brandGreen),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+          color: Colors.black,
+        ),
+      ),
+      trailing: chevron ? const Icon(Icons.arrow_forward_ios, size: 16) : null,
+      onTap: onTap ??
+          (chevron
+              ? () {
+                  // TODO: นำทางไปแก้ไข field นั้น ๆ
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$title (mock)')),
+                  );
+                }
+              : null),
     );
   }
 }

@@ -21,14 +21,16 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   static const _defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://backend-xe4h.onrender.com/post',
+    defaultValue: 'https://backend-xe4h.onrender.com',
   );
 
   late final DatabaseService _db = DatabaseService(baseUrl: _defaultBaseUrl);
 
-  bool _loading = true;
+  // FIX: ต้องเริ่ม false ไม่งั้นโหลดรอบแรกจะไม่เริ่ม
+  bool _loading = false;
   bool _fetchingMore = false;
   String? _nextCursor;
+  String? _error;
 
   List<Post> _posts = [];
 
@@ -39,18 +41,17 @@ class _HomePageState extends State<HomePage> {
 
   final _scroll = ScrollController();
 
-  // ----- NEW: state สำหรับ like/comment -----
+  // ----- Like/Comment ในหน้า -----
   final Set<String> _likedIds = {};
   final Map<String, int> _likeCounts = {};
   final Map<String, int> _commentCounts = {};
-
   int _likeCountOf(Post p) => _likeCounts[p.id] ?? p.likeCount;
   int _commentCountOf(Post p) => _commentCounts[p.id] ?? p.comment;
 
   @override
   void initState() {
     super.initState();
-    _loadFirstPage();
+    _loadFirstPage();                 // โหลดรอบแรกจะวิ่งจริง เพราะ _loading=false
     _scroll.addListener(_maybeLoadMore);
   }
 
@@ -63,7 +64,11 @@ class _HomePageState extends State<HomePage> {
 
   // ---------- Backend calls ----------
   Future<void> _loadFirstPage() async {
-    setState(() => _loading = true);
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     final sort = _chipIds.contains('liked') ? 'liked' : 'recent';
 
@@ -77,10 +82,10 @@ class _HomePageState extends State<HomePage> {
         limit: 20,
         cursor: null,
       );
+      if (!mounted) return;
       setState(() {
         _posts = page.items;
         _nextCursor = page.nextCursor;
-        _loading = false;
 
         // init ตัวเลขจากโหลดรอบนี้
         for (final p in _posts) {
@@ -88,18 +93,22 @@ class _HomePageState extends State<HomePage> {
           _commentCounts[p.id] = p.comment;
         }
       });
-    } catch (e) {
-      // setState(() {
-      //   _posts = [];
-      //   _nextCursor = null;
-      //   _loading = false;
-      // });
-      // _showSnack('Failed to load posts');
+    } catch (e, st) {
+      debugPrint('getPosts error: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _posts = [];
+        _nextCursor = null;
+        _error = e.toString();
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() => _loading = false); // ปิดโหลดเสมอ
     }
   }
 
   Future<void> _loadMore() async {
-    if (_fetchingMore || _nextCursor == null) return;
+    if (_loading || _fetchingMore || _nextCursor == null) return;
     setState(() => _fetchingMore = true);
 
     final sort = _chipIds.contains('liked') ? 'liked' : 'recent';
@@ -114,30 +123,34 @@ class _HomePageState extends State<HomePage> {
         limit: 20,
         cursor: _nextCursor,
       );
+      if (!mounted) return;
       setState(() {
         _posts.addAll(page.items);
         _nextCursor = page.nextCursor;
-        _fetchingMore = false;
 
         for (final p in page.items) {
           _likeCounts[p.id] = p.likeCount;
           _commentCounts[p.id] = p.comment;
         }
       });
-    } catch (e) {
-      setState(() => _fetchingMore = false);
+    } catch (e, st) {
+      debugPrint('loadMore error: $e\n$st');
+      if (!mounted) return;
       _showSnack('Failed to load more');
+    } finally {
+      if (!mounted) return;
+      setState(() => _fetchingMore = false);
     }
   }
 
   Future<void> _onRefresh() => _loadFirstPage();
 
   void _maybeLoadMore() {
+    if (_loading || _fetchingMore || _nextCursor == null) return;
     if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 400) {
       _loadMore();
     }
   }
-
 
   // ---------- Like/Comment actions ----------
   void _toggleLike(Post p) async {
@@ -154,8 +167,7 @@ class _HomePageState extends State<HomePage> {
       }
     });
 
-    // TODO: ยิง API จริงแบบ optimistic
-    // try { await _db.like/unlike(p.id); } catch (e) { rollback }
+    // TODO: call API แบบ optimistic แล้ว rollback ถ้าพัง
   }
 
   void _openComments(Post p) {
@@ -176,103 +188,155 @@ class _HomePageState extends State<HomePage> {
 
   // ---------------------- MOCK (DB-shape) ----------------------
   final List<Map<String, dynamic>> mockPostDocs = [
-    {
-      '_id': 'p2',
-      'user_id': 'u2',
-      'profile_pic': 'assets/mock/avatar1.png',
-      'username': 'fernfern05',
-      'category': 'announcement',
-      'message': 'เชิญชวนร่วมงาน comsampan เสาร์นี้ที่วิศวะคอมค่ะ #cpsk',
-      'picture': 'https://images.pexels.com/photos/3861958/pexels-photo-3861958.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'like_count': 10,
-      'comment': 2,
-      'author_roles': ['student'],
-      'visibility_roles': ['public'],
-      'time_stamp': '2025-08-21T09:30:00Z',
-    },
-    {
-      '_id': 'p21',
-      'user_id': 'u21',
-      'profile_pic': 'assets/mock/avatar21.png',
-      'username': 'study_buddy',
-      'category': 'study',
-      'message': 'หากลุ่มอ่านหนังสือสอบกลางภาคด้วยกัน #ติวหนังสือ',
-      'picture': 'https://picsum.photos/seed/study/800/500',
-      'like_count': 12,
-      'comment': 3,
-      'author_roles': ['student'],
-      'visibility_roles': ['public'],
-      'time_stamp': '2025-08-22T09:00:00Z',
-    },
-    {
-      '_id': 'p3',
-      'user_id': 'u3',
-      'profile_pic': 'assets/mock/avatar2.png',
-      'username': 'kub_samurai',
-      'category': 'market',
-      'message': 'ใครมีเสื้อบอล KU ของแท้ แนะนำหน่อยครับ #พร้อมแลก',
-      'video': 'assets/mock/post_market.mp4',
-      'like_count': 5,
-      'comment': 1,
-      'author_roles': ['student'],
-      'visibility_roles': ['public'],
-      'time_stamp': '2025-08-20T14:00:00Z',
-    },
-    {
-      '_id': 'p4',
-      'user_id': 'u4',
-      'profile_pic': 'assets/mock/avatar3.png',
-      'username': 'doremodereme',
-      'category': 'qa',
-      'message': 'หาเพื่อนดูโดราเอม่อน ep905 ครับ #เพื่อนน้อยพร้อมอวย',
-      'like_count': 7,
-      'comment': 0,
-      'author_roles': ['student'],
-      'visibility_roles': ['public'],
-      'time_stamp': '2025-08-19T18:40:00Z',
-    },
-    {
-      '_id': 'p5',
-      'user_id': 'u5',
-      'profile_pic': 'assets/mock/avatar4.png',
-      'username': 'chanoknarin',
-      'category': 'study',
-      'message': 'เปิดรับเพื่อนติวสอบคณิต ช่วยกันอ่านเด้อ',
-      'like_count': 2,
-      'comment': 0,
-      'author_roles': ['student'],
-      'visibility_roles': ['public'],
-      'time_stamp': '2025-08-18T08:10:00Z',
-    },
-    {
-      '_id': 'p6',
-      'user_id': 'u6',
-      'profile_pic': 'assets/mock/avatar5.png',
-      'username': 'mintymilk',
-      'category': 'market',
-      'message': 'ขายหนังสือมือสอง สภาพดี #ตลาดนัดนักศึกษา',
-      'picture': 'https://picsum.photos/seed/market/800/500',
-      'video': 'assets/mock/post_books.mp4',
-      'like_count': 9,
-      'comment': 4,
-      'author_roles': ['student'],
-      'visibility_roles': ['public'],
-      'time_stamp': '2025-08-17T12:00:00Z',
-    },
-    {
-      '_id': 'p7',
-      'user_id': 'u7',
-      'profile_pic': 'assets/mock/avatar6.png',
-      'username': 'pon_kung',
-      'category': 'sport',
-      'message': 'รับสมัครสมาชิกทีมบาสเพิ่ม 2 ตำแหน่ง',
-      'like_count': 3,
-      'comment': 1,
-      'author_roles': ['student'],
-      'visibility_roles': ['public'],
-      'time_stamp': '2025-08-16T16:25:00Z',
-    },
-  ];
+  {
+    '_id': 'p101',
+    'user_id': 'u101',
+    'profile_pic': 'assets/mock/avatar1.png',
+    'username': 'fernfern05',
+    'category': 'announcement',
+    'message': 'ชวนไปงาน comsampan เสาร์นี้ มีบูธกิจกรรมและเวิร์กชอป #cpsk',
+    // ทั้งรูป + วิดีโอ
+    'picture': 'https://images.pexels.com/photos/3861958/pexels-photo-3861958.jpeg?auto=compress&cs=tinysrgb&w=800',
+    'video': 'https://samplelib.com/lib/preview/mp4/sample-5s.mp4',
+    'like_count': 18,
+    'comment': 4,
+    'author_roles': ['student'],
+    'visibility_roles': ['public'],
+    'time_stamp': '2025-09-07T13:40:00Z',
+  },
+  {
+    '_id': 'p102',
+    'user_id': 'u102',
+    'profile_pic': 'assets/mock/avatar2.png',
+    'username': 'study_buddy',
+    'category': 'study',
+    'message': 'รวมทีมอ่านมิดเทอม วิชา Data Structure คืนนี้ที่ห้องสมุดชั้น 3',
+    // รูปแนวนอน 16:9
+    'picture': 'https://picsum.photos/seed/ds-midterm/1280/720',
+    'like_count': 12,
+    'comment': 3,
+    'author_roles': ['student'],
+    'visibility_roles': ['public'],
+    'time_stamp': '2025-09-06T18:10:00Z',
+  },
+  {
+    '_id': 'p103',
+    'user_id': 'u103',
+    'profile_pic': 'assets/mock/avatar3.png',
+    'username': 'market_mint',
+    'category': 'market',
+    'message': 'ปล่อย iPad Gen9 สภาพดี แถมเคส #ตลาดนัดKU',
+    'like_count': 27,
+    'comment': 6,
+    'author_roles': ['student'],
+    'visibility_roles': ['public'],
+    'time_stamp': '2025-09-05T10:05:00Z',
+  },
+  {
+    '_id': 'p104',
+    'user_id': 'u104',
+    'profile_pic': 'assets/mock/avatar4.png',
+    'username': 'lostnfound',
+    'category': 'lost-found',
+    'message': 'เก็บบัตรนิสิตได้ที่หน้าอาคารเรียนรวม รหัสขึ้นต้น 66xxxx',
+    // ไม่มีสื่อ
+    'like_count': 5,
+    'comment': 1,
+    'author_roles': ['staff'],
+    'visibility_roles': ['public'],
+    'time_stamp': '2025-09-04T07:55:00Z',
+  },
+  {
+    '_id': 'p105',
+    'user_id': 'u105',
+    'profile_pic': 'assets/mock/avatar5.png',
+    'username': 'coding_club',
+    'category': 'club',
+    'message': 'รับสมัครสมาชิกชมรม Coding รุ่นที่ 5 มีเวิร์กชอปฟรีทุกสัปดาห์',
+    'like_count': 34,
+    'comment': 9,
+    'author_roles': ['student'],
+    'visibility_roles': ['student_only'],
+    'time_stamp': '2025-09-03T12:30:00Z',
+  },
+  {
+    '_id': 'p106',
+    'user_id': 'u106',
+    'profile_pic': 'assets/mock/avatar6.png',
+    'username': 'ku_event',
+    'category': 'event',
+    'message': 'บรรยากาศงานกีฬาเฟรชชี่ สนุกมาก!',
+    // รูปพาโนรามาแนวกว้าง
+    'picture': 'https://picsum.photos/seed/panorama-ku/1200/400',
+    'like_count': 21,
+    'comment': 2,
+    'author_roles': ['student'],
+    'visibility_roles': ['public'],
+    'time_stamp': '2025-09-02T15:20:00Z',
+  },
+  {
+    '_id': 'p107',
+    'user_id': 'u107',
+    'profile_pic': 'assets/mock/avatar7.png',
+    'username': 'help_me',
+    'category': 'qa',
+    'message': 'ใครผ่านวิชา OS แล้วมีโน้ตแนะนำไหมครับ 🙏',
+    'like_count': 8,
+    'comment': 5,
+    'author_roles': ['student'],
+    'visibility_roles': ['public'],
+    'time_stamp': '2025-09-01T20:45:00Z',
+  },
+  {
+    '_id': 'p108',
+    'user_id': 'u108',
+    'profile_pic': 'assets/mock/avatar8.png',
+    'username': 'meme_lab',
+    'category': 'meme',
+    'message': 'เมื่ออาจารย์บอก “ควิซสั้น ๆ” แต่สไลด์ 120 หน้า 😂',
+    'picture': 'https://picsum.photos/seed/meme-quiz/900/900',
+    'like_count': 56,
+    'comment': 11,
+    'author_roles': ['student'],
+    'visibility_roles': ['public'],
+    'time_stamp': '2025-08-31T11:00:00Z',
+  },
+  {
+    '_id': 'p109',
+    'user_id': 'u109',
+    'profile_pic': 'assets/mock/avatar9.png',
+    'username': 'home_seek',
+    'category': 'housing',
+    'message': 'หอพักแถวประตูงามวงศ์วาน ห้องว่างเดือนหน้า ติดต่อ DM',
+    // หลายรูป (คละสัดส่วน)
+    'images': [
+      'https://picsum.photos/seed/dorm1/1000/700',
+      'https://picsum.photos/seed/dorm2/800/1200',
+      'https://picsum.photos/seed/dorm3/1200/800',
+    ],
+    'like_count': 14,
+    'comment': 3,
+    'author_roles': ['student'],
+    'visibility_roles': ['public'],
+    'time_stamp': '2025-08-30T09:15:00Z',
+  },
+  {
+    '_id': 'p110',
+    'user_id': 'u110',
+    'profile_pic': 'assets/mock/avatar10.png',
+    'username': 'career_center',
+    'category': 'job',
+    'message': 'รับสมัคร TA วิชา Programming Lab ชม.ละ 120 มีใบประกาศนียบัตร',
+    // วิดีโอ (ใช้ asset ภายในโปรเจกต์)
+    'video': 'assets/mock/ta_recruit.mp4',
+    'like_count': 19,
+    'comment': 7,
+    'author_roles': ['staff'],
+    'visibility_roles': ['student_only'],
+    'time_stamp': '2025-08-29T08:00:00Z',
+  },
+];
+
 
   late final List<Post> mockPostsUi =
       mockPostDocs.map((j) => Post.fromJson(j)).toList();
@@ -283,8 +347,28 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_error != null)
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    const Text('โหลดข้อมูลไม่สำเร็จ'),
+                    const SizedBox(height: 8),
+                    Text(
+                      _error!,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, color: Colors.red),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton(onPressed: _onRefresh, child: const Text('ลองใหม่')),
+                  ],
+                ),
+              ),
+            ),
           ...mockPostsUi.map((p) {
-            // init state สำหรับ mock
             final liked = _likedIds.contains(p.id);
             final likes = _likeCounts[p.id] ?? p.likeCount;
             final comments = _commentCounts[p.id] ?? p.comment;
@@ -332,7 +416,7 @@ class _HomePageState extends State<HomePage> {
           color: Theme.of(context).scaffoldBackgroundColor,
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Row (
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 FilterPill(
@@ -340,25 +424,26 @@ class _HomePageState extends State<HomePage> {
                   leading: Icons.filter_list,
                   selected: false,
                   onTap: () async {
-                    final result = await showModalBottomSheet<FilterSheetResult>(
+                    final result =
+                        await showModalBottomSheet<FilterSheetResult>(
                       context: context,
-                      isScrollControlled: true,            // สำคัญสำหรับ DraggableScrollableSheet
-                      backgroundColor: Colors.transparent, // ให้มุมบนโค้งสวย
-                      builder: (_) => FilterBottomSheet(
-                        loadFilters: mockLoadFilters,      // ใส่ loader จริงของคุณได้
-                        initial: const FilterSheetResult(
-                          facultyIds: {}, clubIds: {}, categoryIds: {},
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const FilterBottomSheet(
+                        loadFilters: mockLoadFilters,
+                        initial: FilterSheetResult(
+                          facultyIds: {},
+                          clubIds: {},
+                          categoryIds: {},
                         ),
                       ),
                     );
-
-  if (result != null) {
-    // TODO: นำ result.facultyIds / clubIds / categoryIds
-    // ไป map เข้าฟิลเตอร์หน้า HomePage แล้วเรียก _loadFirstPage()
-  }
-}
+                    if (result != null) {
+                      // TODO: map result -> _chipIds/_categoryId/_roleId แล้ว:
+                      _loadFirstPage();
+                    }
+                  },
                 ),
-
               ],
             ),
           ),

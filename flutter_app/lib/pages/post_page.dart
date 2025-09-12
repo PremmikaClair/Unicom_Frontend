@@ -17,7 +17,8 @@ class _PostPageState extends State<PostPage> {
   // ---- API base ----
   static const _defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://backend-xe4h.onrender.com/post',
+    // ใช้รากโดเมน แล้วให้ DatabaseService ต่อ path เอง จะเลี่ยง 404 /post
+    defaultValue: 'https://backend-xe4h.onrender.com',
   );
   late final DatabaseService _db = DatabaseService(baseUrl: _defaultBaseUrl);
 
@@ -57,14 +58,29 @@ class _PostPageState extends State<PostPage> {
       // ตัวอย่าง mock ชั่วคราว:
       await Future<void>.delayed(const Duration(milliseconds: 250));
       final mock = <_CommentItem>[
-        // ตัวอย่างคอมเมนต์เริ่มต้น (จะเป็น [] ก็ได้)
-        // _CommentItem(user: 'mintymilk', avatar: 'assets/mock/avatar5.png', text: 'น่าสนใจมากเลยครับ', createdAt: DateTime.now().subtract(const Duration(minutes: 30))),
+        _CommentItem(
+          id: 'c1',
+          user: 'mintymilk',
+          avatar: 'assets/mock/avatar5.png',
+          text: 'น่าสนใจมากเลยครับ',
+          createdAt: DateTime.now().subtract(const Duration(minutes: 30)),
+          likeCount: 2,
+          liked: false,
+        ),
+        _CommentItem(
+          id: 'c2',
+          user: 'fernfern05',
+          avatar: 'assets/mock/avatar1.png',
+          text: 'ไปด้วยได้มั้ยคะ 😆',
+          createdAt: DateTime.now().subtract(const Duration(minutes: 12)),
+          likeCount: 1,
+          liked: true,
+        ),
       ];
       setState(() {
         _comments
           ..clear()
           ..addAll(mock);
-        // ถ้าคุณต้องการให้ตัวเลขนับจากคอมเมนต์จริง:
         _commentCount = _comments.length; // หรือคงไว้ตาม server ก็ได้
         _loading = false;
       });
@@ -86,11 +102,14 @@ class _PostPageState extends State<PostPage> {
 
     // optimistic add
     final temp = _CommentItem(
+      id: null,
       user: 'you', // TODO: ใส่ชื่อผู้ใช้จริงจากโปรไฟล์/ auth
       avatar: null, // 'assets/mock/your_avatar.png'
       text: text,
       createdAt: DateTime.now(),
       localId: UniqueKey().toString(),
+      likeCount: 0,
+      liked: false,
     );
 
     setState(() {
@@ -102,14 +121,11 @@ class _PostPageState extends State<PostPage> {
     _scrollToBottom();
 
     try {
-      // TODO: call real API
-      // await _db.addComment(widget.post.id, text);
-
+      // TODO: call real API สร้างคอมเมนต์ แล้วรับ id จริงกลับมา
+      // final newId = await _db.addComment(widget.post.id, text);
       await Future<void>.delayed(const Duration(milliseconds: 250)); // mock
-
-      // ถ้าสำเร็จ: อาจจะรีเฟรชจากเซิร์ฟเวอร์เพื่อ sync id/time ที่แท้จริง
       setState(() {
-        // do nothing; optimistic OK
+        // ถ้าได้ id จริงจาก server ให้อัปเดตคอมเมนต์ temp.id = newId
       });
     } catch (e) {
       // rollback เมื่อ error
@@ -124,7 +140,7 @@ class _PostPageState extends State<PostPage> {
   }
 
   void _toggleLike() {
-    // optimistic like
+    // optimistic like ของ "โพสต์"
     setState(() {
       if (_liked) {
         _liked = false;
@@ -135,7 +151,40 @@ class _PostPageState extends State<PostPage> {
       }
     });
 
-    // TODO: ยิง API จริง (_db.like/unlike(widget.post.id)) + rollback เมื่อ error
+    // TODO: ยิง API จริง (_db.like/unlikePost(widget.post.id)) + rollback เมื่อ error
+  }
+
+  // ---- NEW: toggle like ของ "คอมเมนต์" ----
+  Future<void> _toggleCommentLike(int index) async {
+    final item = _comments[index];
+    final prevLiked = item.liked;
+    final prevCount = item.likeCount;
+
+    // ถ้ายังไม่มี id จริง (คอมเมนต์เพิ่งส่ง) จะไม่เรียก API แต่ให้ toggle ได้ในจอ
+    setState(() {
+      item.liked = !item.liked;
+      final newCount = prevLiked ? (prevCount - 1) : (prevCount + 1);
+      item.likeCount = newCount < 0 ? 0 : newCount;
+    });
+
+    try {
+      // TODO: ต่อ API จริงเมื่อมี id
+      if (item.id != null) {
+        // await _db.setCommentLike(
+        //   postId: widget.post.id,
+        //   commentId: item.id!,
+        //   like: item.liked,
+        // );
+        await Future<void>.delayed(const Duration(milliseconds: 200)); // mock
+      }
+    } catch (e) {
+      // rollback เมื่อ error
+      setState(() {
+        item.liked = prevLiked;
+        item.likeCount = prevCount;
+      });
+      _showSnack('กดไลค์คอมเมนต์ไม่สำเร็จ');
+    }
   }
 
   void _scrollToBottom() {
@@ -232,7 +281,14 @@ class _PostPageState extends State<PostPage> {
                     ),
                   )
                 else
-                  ..._comments.map((c) => _CommentTile(item: c)).toList(),
+                  ..._comments.asMap().entries.map((e) {
+                    final i = e.key;
+                    final c = e.value;
+                    return _CommentTile(
+                      item: c,
+                      onToggleLike: () => _toggleCommentLike(i),
+                    );
+                  }).toList(),
                 const SizedBox(height: 80), // เผื่อพื้นที่ให้ input bar
               ],
             ),
@@ -323,7 +379,8 @@ class _KucomTitle extends StatelessWidget {
 
 class _CommentTile extends StatelessWidget {
   final _CommentItem item;
-  const _CommentTile({required this.item});
+  final VoidCallback? onToggleLike; // NEW
+  const _CommentTile({required this.item, this.onToggleLike});
 
   @override
   Widget build(BuildContext context) {
@@ -364,6 +421,39 @@ class _CommentTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(item.text),
+
+                  // --- like row (NEW) ---
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      InkWell(
+                        onTap: onToggleLike,
+                        borderRadius: BorderRadius.circular(16),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          child: Row(
+                            children: [
+                              Icon(
+                                item.liked ? Icons.favorite : Icons.favorite_border,
+                                size: 16,
+                                color: item.liked ? AppColors.sage : Colors.black45,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${item.likeCount}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: item.liked ? AppColors.sage : Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -394,6 +484,7 @@ class _CommentTile extends StatelessWidget {
 
 // ---------- lightweight comment model (local) ----------
 class _CommentItem {
+  final String? id;     // id จริงของคอมเมนต์ (อาจยังไม่มีตอน optimistic)
   final String user;
   final String? avatar;
   final String text;
@@ -402,11 +493,18 @@ class _CommentItem {
   // สำหรับ optimistic/rollback
   final String? localId;
 
+  // สำหรับ like คอมเมนต์
+  int likeCount;
+  bool liked;
+
   _CommentItem({
+    this.id,
     required this.user,
     required this.avatar,
     required this.text,
     required this.createdAt,
     this.localId,
+    this.likeCount = 0,
+    this.liked = false,
   });
 }

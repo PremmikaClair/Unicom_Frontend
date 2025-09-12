@@ -17,28 +17,50 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late int index;
 
-  // เอา const ออก เว้นแต่ทุกหน้าเป็น const constructor จริง ๆ
-  final pages = [
-    HomePage(),
-    ExplorePage(),
-    AddPostPage(),
-    EventsPage(),
-  ];
+  // บันทึกว่าหน้าไหนถูกสร้างแล้วบ้าง (เริ่มที่หน้าแรก)
+  final _built = <bool>[true, false, false, false];
+
+  // เก็บ instance ของแต่ละหน้า (สร้างเมื่อถูกใช้งานครั้งแรก)
+  final List<Widget?> _pages = [const HomePage(), null, null, null];
+
+  Widget _createPage(int i) {
+    switch (i) {
+      case 1:
+        return const ExplorePage();
+      case 2:
+        return const AddPostPage();
+      case 3:
+        return EventsPage(); // ไม่ใส่ const ถ้าหน้านี้มี state/fetch
+      default:
+        return const HomePage();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     index = widget.initialIndex;
+    _built[index] = true;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: IndexedStack(index: index, children: pages),
+      body: IndexedStack(
+        index: index,
+        // ถ้ายังไม่ถูกเลือก ให้ใส่ SizedBox() แทน เพื่อลดการสร้าง/เรียก API
+        children: List.generate(4, (i) {
+          if (!_built[i]) return const SizedBox.shrink();
+          return _pages[i] ??= _createPage(i);
+        }),
+      ),
       bottomNavigationBar: BottomDockNav(
         index: index,
-        onTap: (i) => setState(() => index = i),
+        onTap: (i) => setState(() {
+          index = i;
+          _built[i] = true; // สร้างหน้านี้ครั้งแรกตอนถูกเลือก
+        }),
         items: const [
           BottomDockItem(icon: Icons.home_filled, label: 'Home'),
           BottomDockItem(icon: Icons.search_rounded, label: 'Explore'),

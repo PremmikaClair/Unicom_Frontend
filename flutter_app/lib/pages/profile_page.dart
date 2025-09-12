@@ -1,11 +1,16 @@
-// lib/pages/profile_page.dart
+// lib/pages/home_page.dart
 import 'package:flutter/material.dart';
+import '../components/bottom_nav.dart';
+import 'app_shell.dart';
+import 'personal_info.dart';
+import 'home_page.dart';
+import 'change_username_page.dart';
 
 class ProfilePage extends StatefulWidget {
   /// null = my profile (editable)
   final String? userId;
 
-  /// Optional initial values (useful when navigating from a post)
+  /// Optional initial values (used when navigating from other pages)
   final String? initialUsername;
   final String? initialName;
   final String? initialAvatarUrl;
@@ -25,119 +30,63 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  bool _loading = true;
+  bool _loading = false;
   String? _error;
 
-  // Profile data
+  // Fake profile data placeholders
   String _username = '';
   String _name = '';
   String _avatarUrl = '';
   String _bio = '';
 
-  // Editing state (allowed only if isMe)
-  bool _editing = false;
-  final _nameCtrl = TextEditingController();
-  final _usernameCtrl = TextEditingController();
-  final _bioCtrl = TextEditingController();
-  final _avatarCtrl = TextEditingController();
-
-  bool get _isMe => widget.userId == null;
+  void _onDockTap(BuildContext context, int index) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => AppShell(initialIndex: index)),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
-    _bootstrap();
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _usernameCtrl.dispose();
-    _bioCtrl.dispose();
-    _avatarCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _bootstrap() async {
-    // Seed quick UI from initial hints (if provided)
     _username = widget.initialUsername ?? _username;
     _name = widget.initialName ?? _name;
     _avatarUrl = widget.initialAvatarUrl ?? _avatarUrl;
     _bio = widget.initialBio ?? _bio;
-
-    // Show seeded data immediately
-    setState(() {
-      _loading = false;
-    });
-
-    // TODO: fetch real data
-    // If you have a UserService, call it here:
-    // final baseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: 'https://backend-xe4h.onrender.com');
-    // final users = UserService(baseUrl);
-    // try {
-    //   final u = _isMe ? await users.getMe() : await users.getUser(widget.userId!);
-    //   if (!mounted) return;
-    //   setState(() {
-    //     _username = u.username;
-    //     _name = u.name;
-    //     _avatarUrl = u.avatarUrl ?? '';
-    //     _bio = u.bio ?? '';
-    //     _error = null;
-    //   });
-    // } catch (e) {
-    //   if (!mounted) return;
-    //   setState(() => _error = e.toString());
-    // }
-  }
-
-  void _enterEdit() {
-    _nameCtrl.text = _name;
-    _usernameCtrl.text = _username;
-    _bioCtrl.text = _bio;
-    _avatarCtrl.text = _avatarUrl;
-    setState(() => _editing = true);
-  }
-
-  Future<void> _save() async {
-    // TODO: call PUT /users/:id (or /auth/me) to save
-    setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 400)); // fake latency
-
-    setState(() {
-      _name = _nameCtrl.text.trim();
-      _username = _usernameCtrl.text.trim();
-      _bio = _bioCtrl.text.trim();
-      _avatarUrl = _avatarCtrl.text.trim();
-      _editing = false;
-      _loading = false;
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated')),
-      );
-    }
-  }
-
-  void _cancel() {
-    setState(() => _editing = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final title = _isMe ? 'My Profile' : 'Profile';
-
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(title),
-        actions: [
-          if (_isMe && !_editing && !_loading)
-            IconButton(icon: const Icon(Icons.edit), onPressed: _enterEdit),
-          if (_isMe && _editing)
-            IconButton(icon: const Icon(Icons.check), onPressed: _save),
-          if (_isMe && _editing)
-            IconButton(icon: const Icon(Icons.close), onPressed: _cancel),
-        ],
+        centerTitle: true,
+        title: const Text(
+          'Profile',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF006400),
+          ),
+        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
+        leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () {
+          if (Navigator.canPop(context)) {
+            Navigator.pop(context); // กลับไป route เดิมที่อยู่ใต้ AppShell
+          } else {
+            // เผื่อกรณีเปิดมาจาก deep link หรือไม่มีอะไรให้ pop
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => AppShell(initialIndex: 0)),
+            );
+          }
+        },
+      ),
+
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -149,115 +98,87 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 )
               : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Avatar
                       CircleAvatar(
                         radius: 48,
                         backgroundImage:
                             _avatarUrl.isNotEmpty ? NetworkImage(_avatarUrl) : null,
-                        child: _avatarUrl.isEmpty
-                            ? const Icon(Icons.person, size: 48)
-                            : null,
+                        child:
+                            _avatarUrl.isEmpty ? const Icon(Icons.person, size: 48) : null,
                       ),
-                      const SizedBox(height: 12),
-
-                      if (_isMe && _editing)
-                        TextField(
-                          controller: _avatarCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Avatar URL',
-                            hintText: 'https://…',
-                          ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _name.isNotEmpty ? _name : '—',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 24,
+                          color: Colors.black,
                         ),
-
-                      const SizedBox(height: 16),
-
-                      // Name
-                      _isMe && _editing
-                          ? TextField(
-                              controller: _nameCtrl,
-                              decoration: const InputDecoration(labelText: 'Name'),
-                            )
-                          : Text(
-                              _name.isNotEmpty ? _name : '—',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-
-                      const SizedBox(height: 6),
-
-                      // Username
-                      _isMe && _editing
-                          ? TextField(
-                              controller: _usernameCtrl,
-                              decoration: const InputDecoration(labelText: 'Username'),
-                            )
-                          : Text(
-                              _username.isNotEmpty ? '@$_username' : '@—',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-
-                      const SizedBox(height: 16),
-
-                      // Bio
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('Bio', style: Theme.of(context).textTheme.titleMedium),
                       ),
-                      const SizedBox(height: 6),
-                      _isMe && _editing
-                          ? TextField(
-                              controller: _bioCtrl,
-                              decoration: const InputDecoration(
-                                hintText: 'Tell people about yourself…',
-                                border: OutlineInputBorder(),
-                              ),
-                              minLines: 3,
-                              maxLines: 6,
-                            )
-                          : Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                _bio.isNotEmpty ? _bio : 'No bio yet.',
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ),
-
-                      const SizedBox(height: 24),
-
-                      // Actions for viewing other users
-                      if (!_isMe && !_editing)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                      const SizedBox(height: 8),
+                      Text(
+                        _username.isNotEmpty ? '@$_username' : '@—',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE6F4EA),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
                           children: [
-                            ElevatedButton(
-                              onPressed: () {
-                                // TODO: POST /users/:id/follow
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Followed (mock)')),
+                            ListTile(
+                              leading:
+                                  const Icon(Icons.edit, color: Color(0xFF006400)),
+                              title: const Text('Change username'),
+                              trailing:
+                                  const Icon(Icons.arrow_forward_ios, size: 16),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) => ChangeUsernamePage()),
                                 );
                               },
-                              child: const Text('Follow'),
                             ),
-                            const SizedBox(width: 12),
-                            OutlinedButton(
-                              onPressed: () {
-                                // TODO: open chat
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Message (mock)')),
+                            const Divider(height: 1, thickness: 1),
+                            ListTile(
+                              leading:
+                                  const Icon(Icons.person, color: Color(0xFF006400)),
+                              title: const Text('Personal information'),
+                              trailing:
+                                  const Icon(Icons.arrow_forward_ios, size: 16),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) => PersonalInfoPage()),
                                 );
                               },
-                              child: const Text('Message'),
                             ),
                           ],
                         ),
+                      ),
                     ],
                   ),
                 ),
+      bottomNavigationBar: BottomDockNav(
+        index: -1,
+        onTap: (i) => _onDockTap(context, i),
+        items: const [
+          BottomDockItem(icon: Icons.home_filled, label: 'Home'),
+          BottomDockItem(icon: Icons.search_rounded, label: 'Explore'),
+          BottomDockItem(icon: Icons.add_rounded, label: 'Add'),
+          BottomDockItem(icon: Icons.event_rounded, label: 'Events'),
+        ],
+      ),
     );
   }
 }
