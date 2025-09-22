@@ -1,16 +1,16 @@
-// lib/pages/home_page.dart
+// lib/pages/profile_page.dart
 import 'package:flutter/material.dart';
-import '../components/bottom_nav.dart';
 import 'app_shell.dart';
-import 'personal_info.dart';
-import 'home_page.dart';
-import 'change_username_page.dart';
+import 'auth_gate.dart';
+import '../services/auth_service.dart';
+import '../services/database_service.dart';
+import '../models/user.dart';
 
 class ProfilePage extends StatefulWidget {
-  /// null = my profile (editable)
+  /// If null -> show current user profile (editable). If not null -> user ObjectID string.
   final String? userId;
 
-  /// Optional initial values (used when navigating from other pages)
+  /// Optional initial hints when navigating from post/author tap
   final String? initialUsername;
   final String? initialName;
   final String? initialAvatarUrl;
@@ -30,29 +30,47 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  bool _loading = false;
+  bool _loading = true;
   String? _error;
 
-  // Fake profile data placeholders
-  String _username = '';
-  String _name = '';
-  String _avatarUrl = '';
-  String _bio = '';
+  final _db = DatabaseService();
 
-  void _onDockTap(BuildContext context, int index) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => AppShell(initialIndex: index)),
-    );
-  }
+  UserProfile? _user;
+  String? _usernameHint;
+  String? _nameHint;
+  String? _avatarHint;
+ 
 
   @override
   void initState() {
     super.initState();
-    _username = widget.initialUsername ?? _username;
-    _name = widget.initialName ?? _name;
-    _avatarUrl = widget.initialAvatarUrl ?? _avatarUrl;
-    _bio = widget.initialBio ?? _bio;
+    _usernameHint = widget.initialUsername;
+    _nameHint = widget.initialName;
+    _avatarHint = widget.initialAvatarUrl;
+    _load();
+  }
+
+  Future<void> _load() async {
+    // If this is an author's profile without id, show hints only (no fetch)
+    if (!_isMine && (widget.userId == null || widget.userId!.isEmpty)) {
+      setState(() { _loading = false; });
+      return;
+    }
+    setState(() { _loading = true; _error = null; });
+    try {
+      UserProfile? u;
+      if (widget.userId != null && widget.userId!.trim().isNotEmpty) {
+        // New fiber users API expects Mongo ObjectID in path
+        final map = await _db.getUserByObjectIdFiber(widget.userId!.trim());
+        u = UserProfile.fromJson(map);
+      } else {
+        final map = await _db.getMeFiber();
+        u = UserProfile.fromJson(map);
+      }
+      setState(() { _user = u; _loading = false; });
+    } catch (e) {
+      setState(() { _error = e.toString(); _loading = false; });
+    }
   }
 
   @override
@@ -63,30 +81,33 @@ class _ProfilePageState extends State<ProfilePage> {
         centerTitle: true,
         title: const Text(
           'Profile',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF006400),
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF006400)),
         ),
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
         leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        onPressed: () {
-          if (Navigator.canPop(context)) {
-            Navigator.pop(context); // กลับไป route เดิมที่อยู่ใต้ AppShell
-          } else {
-            // เผื่อกรณีเปิดมาจาก deep link หรือไม่มีอะไรให้ pop
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => AppShell(initialIndex: 0)),
-            );
-          }
-        },
-      ),
-
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => AppShell(initialIndex: 0)),
+              );
+            }
+          },
+        ),
+        actions: [
+          if (_isMine)
+            IconButton(
+              tooltip: 'Logout',
+              icon: const Icon(Icons.logout),
+              onPressed: _logout,
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -102,83 +123,114 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      CircleAvatar(
-                        radius: 48,
-                        backgroundImage:
-                            _avatarUrl.isNotEmpty ? NetworkImage(_avatarUrl) : null,
-                        child:
-                            _avatarUrl.isEmpty ? const Icon(Icons.person, size: 48) : null,
-                      ),
+                      _buildAvatar(),
                       const SizedBox(height: 16),
-                      Text(
-                        _name.isNotEmpty ? _name : '—',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 24,
-                          color: Colors.black,
-                        ),
-                      ),
+                      Text(_displayName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24, color: Colors.black)),
                       const SizedBox(height: 8),
-                      Text(
-                        _username.isNotEmpty ? '@$_username' : '@—',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
-                        ),
-                      ),
+                      if (_displayUsername != null)
+                        Text(_displayUsername!, style: const TextStyle(fontSize: 14, color: Colors.grey)),
                       const SizedBox(height: 32),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE6F4EA),
-                          borderRadius: BorderRadius.circular(12),
+                      _buildInfoList(),
+                      const SizedBox(height: 16),
+                      if (_isMine)
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _logout,
+                            icon: const Icon(Icons.logout),
+                            label: const Text('Logout'),
+                          ),
                         ),
-                        child: Column(
-                          children: [
-                            ListTile(
-                              leading:
-                                  const Icon(Icons.edit, color: Color(0xFF006400)),
-                              title: const Text('Change username'),
-                              trailing:
-                                  const Icon(Icons.arrow_forward_ios, size: 16),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (context) => ChangeUsernamePage()),
-                                );
-                              },
-                            ),
-                            const Divider(height: 1, thickness: 1),
-                            ListTile(
-                              leading:
-                                  const Icon(Icons.person, color: Color(0xFF006400)),
-                              title: const Text('Personal information'),
-                              trailing:
-                                  const Icon(Icons.arrow_forward_ios, size: 16),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (context) => PersonalInfoPage()),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 ),
-      bottomNavigationBar: BottomDockNav(
-        index: -1,
-        onTap: (i) => _onDockTap(context, i),
-        items: const [
-          BottomDockItem(icon: Icons.home_filled, label: 'Home'),
-          BottomDockItem(icon: Icons.search_rounded, label: 'Explore'),
-          BottomDockItem(icon: Icons.add_rounded, label: 'Add'),
-          BottomDockItem(icon: Icons.event_rounded, label: 'Events'),
+    );
+  }
+
+  bool get _isMine {
+    if (widget.userId != null && widget.userId!.isNotEmpty) return false;
+    // Treat as author's profile when initial hints are provided
+    if ((widget.initialUsername ?? widget.initialAvatarUrl ?? widget.initialName) != null) return false;
+    return true; // default to current user (e.g., header tap)
+  }
+
+  String get _displayName {
+    final name = _user != null
+        ? [(_user!.firstName ?? '').trim(), (_user!.lastName ?? '').trim()]
+            .where((s) => s.isNotEmpty)
+            .join(' ')
+        : (_nameHint ?? '—');
+    return name.isNotEmpty ? name : '—';
+  }
+
+  String? get _displayUsername {
+    if (_user?.email != null && _user!.email!.isNotEmpty) return _user!.email;
+    if (_usernameHint != null && _usernameHint!.isNotEmpty) return '@${_usernameHint!}';
+    return null;
+  }
+
+  Widget _buildAvatar() {
+    final url = _avatarHint; // no avatar URL from current backend yet
+    return CircleAvatar(
+      radius: 48,
+      backgroundImage: (url != null && url.isNotEmpty) ? NetworkImage(url) : null,
+      child: (url == null || url.isEmpty) ? const Icon(Icons.person, size: 48) : null,
+    );
+  }
+
+  Widget _buildInfoList() {
+    final rows = <MapEntry<String, String?>>[
+      MapEntry('ID', _user?.id?.toString()),
+      MapEntry('Email', _user?.email),
+      MapEntry('Student ID', _user?.studentId),
+      MapEntry('Advisor ID', _user?.advisorId),
+      MapEntry('Gender', _user?.gender),
+      MapEntry('Type', _user?.typePerson),
+      MapEntry('Status', _user?.status),
+    ];
+    final shownKeys = <String>{'id','email','student_id','advisor_id','gender','type_person','status'};
+    final extra = _user?.raw.entries
+            .where((e) => !shownKeys.contains(e.key))
+            .map((e) => MapEntry(e.key, e.value?.toString()))
+            .toList() ??
+        const <MapEntry<String,String?>>[];
+    return Container(
+      decoration: BoxDecoration(color: const Color(0xFFE6F4EA), borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        children: [
+          for (final e in rows)
+            if (e.value != null && e.value!.isNotEmpty)
+              Column(children: [
+                ListTile(
+                  dense: true,
+                  title: Text(e.key),
+                  subtitle: Text(e.value!),
+                ),
+                const Divider(height: 1),
+              ]),
+          for (final e in extra)
+            Column(children: [
+              ListTile(
+                dense: true,
+                title: Text(e.key),
+                subtitle: Text(e.value ?? ''),
+              ),
+              const Divider(height: 1),
+            ]),
         ],
       ),
+    );
+  }
+
+ 
+
+  Future<void> _logout() async {
+    await AuthService.I.logout();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthGate(child: AppShell())),
+      (route) => false,
     );
   }
 }

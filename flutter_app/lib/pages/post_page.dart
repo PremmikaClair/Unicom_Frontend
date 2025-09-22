@@ -4,6 +4,8 @@ import 'package:flutter_app/components/app_colors.dart';
 import 'package:flutter_app/components/post_card.dart';
 import 'package:flutter_app/models/post.dart' as models;
 import 'package:flutter_app/services/database_service.dart';
+import 'package:flutter_app/services/auth_service.dart';
+import 'profile_page.dart';
 
 class PostPage extends StatefulWidget {
   final models.Post post;
@@ -15,12 +17,7 @@ class PostPage extends StatefulWidget {
 
 class _PostPageState extends State<PostPage> {
   // ---- API base ----
-  static const _defaultBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    // ใช้รากโดเมน แล้วให้ DatabaseService ต่อ path เอง จะเลี่ยง 404 /post
-    defaultValue: 'https://backend-xe4h.onrender.com',
-  );
-  late final DatabaseService _db = DatabaseService(baseUrl: _defaultBaseUrl);
+  late final DatabaseService _db = DatabaseService();
 
   // ---- comment state ----
   final List<_CommentItem> _comments = [];
@@ -209,16 +206,27 @@ class _PostPageState extends State<PostPage> {
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
     // การ์ดโพสต์ (ใช้ PostCard เดิม)
-    final postCard = PostCard(
-      post: widget.post,
-      isLiked: _liked,
-      likeCount: _likeCount,
-      commentCount: _commentCount,
-      onToggleLike: _toggleLike,
-      onCommentTap: _focusCommentField,
-      onCardTap: () {}, // ไม่ต้องทำอะไรในหน้ารายละเอียด
-      onAvatarTap: () {}, // แล้วแต่ต้องการ
-    );
+  final postCard = PostCard(
+    post: widget.post,
+    isLiked: _liked,
+    likeCount: _likeCount,
+    commentCount: _commentCount,
+    onToggleLike: _toggleLike,
+    onCommentTap: _focusCommentField,
+    onCardTap: () {}, // ไม่ต้องทำอะไรในหน้ารายละเอียด
+    onAvatarTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProfilePage(
+            userId: widget.post.userId.isNotEmpty ? widget.post.userId : null,
+            initialUsername: widget.post.username,
+            initialAvatarUrl: widget.post.profilePic,
+          ),
+        ),
+      );
+    },
+  );
 
     return Scaffold(
       backgroundColor: AppColors.bg,

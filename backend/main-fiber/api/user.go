@@ -12,7 +12,7 @@ import (
 	"time"
 	"github.com/pllus/main-fiber/config"
 	"github.com/gofiber/fiber/v2"
-
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"github.com/pllus/main-fiber/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -155,16 +155,12 @@ func GetUsers(c *fiber.Ctx) error {
 	return c.JSON(PagedUsersResponse{Items: users, NextCursor: next})
 }
 
-// @Summary Get a single user by numeric app id
-// @Tags users
-// @Produce json
-// @Param id path int true "User numeric id"
-// @Success 200 {object} models.User
-// @Router /users/{id} [get]
+// GET /api/users/:id  (id is ObjectID hex)
 func GetUserByID(c *fiber.Ctx) error {
-	userID, err := strconv.Atoi(c.Params("id"))
+	idParam := c.Params("id")
+	oid, err := primitive.ObjectIDFromHex(idParam)
 	if err != nil {
-		return c.Status(400).SendString("Invalid id")
+		return c.Status(fiber.StatusBadRequest).SendString("invalid ObjectID")
 	}
 
 	col := usersColl()
@@ -172,24 +168,15 @@ func GetUserByID(c *fiber.Ctx) error {
 	defer cancel()
 
 	var u models.User
-	err = col.FindOne(ctx, bson.M{"id": userID}).Decode(&u)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return c.SendStatus(404)
-	}
-	if err != nil {
-		log.Println("users FindOne error:", err)
-		return c.Status(500).SendString("DB error")
+	if err := col.FindOne(ctx, bson.M{"_id": oid}).Decode(&u); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return c.SendStatus(fiber.StatusNotFound)
+		}
+		return c.Status(fiber.StatusInternalServerError).SendString("DB error")
 	}
 	return c.JSON(u)
 }
 
-// @Summary Create a new user
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param user body models.User true "User"
-// @Success 201 {object} models.User
-// @Router /users [post]
 func CreateUser(c *fiber.Ctx) error {
 	var u models.User
 	if err := c.BodyParser(&u); err != nil {
@@ -231,14 +218,7 @@ func CreateUser(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(u)
 }
 
-// @Summary Update an existing user by numeric id
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param id path int true "User numeric id"
-// @Param user body models.User true "User partial or full"
-// @Success 200 {object} models.User
-// @Router /users/{id} [put]
+
 func UpdateUser(c *fiber.Ctx) error {
 	userID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
@@ -305,12 +285,7 @@ func UpdateUser(c *fiber.Ctx) error {
 	return c.JSON(updated)
 }
 
-// @Summary Delete a user by numeric id
-// @Tags users
-// @Produce json
-// @Param id path int true "User numeric id"
-// @Success 204 "No Content"
-// @Router /users/{id} [delete]
+
 func DeleteUser(c *fiber.Ctx) error {
 	userID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
@@ -332,13 +307,36 @@ func DeleteUser(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
+// GET /api/user/me
+func GetMeHandler(c *fiber.Ctx) error {
+	userID, err := userIDFromBearer(c) // from your authz.go
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	col := usersColl()
+	ctx, cancel := dbCtx()
+	defer cancel()
+
+	var u models.User
+	if err := col.FindOne(ctx, bson.M{"_id": userID}).Decode(&u); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return c.SendStatus(fiber.StatusNotFound)
+		}
+		return c.Status(fiber.StatusInternalServerError).SendString("DB error")
+	}
+	return c.JSON(u)
+}
+
 
 	
 // Router registration
 func RegisterUserRoutes(router fiber.Router) {
+	router.Get("/user/me",   GetMeHandler)
 	router.Get("/users", GetUsers)
 	router.Get("/users/:id", GetUserByID)
 	router.Post("/users", CreateUser)
 	router.Put("/users/:id", UpdateUser)
 	router.Delete("/users/:id", DeleteUser)
+
 }

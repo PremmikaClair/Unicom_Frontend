@@ -2,15 +2,18 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'auth_service.dart';
 import '../shared/paging.dart';
 import '../models/post.dart';
 import '../models/event.dart';
+import '../models/user.dart';
 
 class DatabaseService {
   final String baseUrl;
   final http.Client _client;
-  DatabaseService({required this.baseUrl, http.Client? client})
-      : _client = client ?? http.Client();
+  DatabaseService({String? baseUrl, http.Client? client})
+      : baseUrl = baseUrl ?? AuthService.I.base,
+        _client = client ?? http.Client();
 
   Uri _buildUri(String path, Map<String, String?> qp) {
     final base = baseUrl.endsWith('/')
@@ -21,6 +24,41 @@ class DatabaseService {
       for (final e in qp.entries)
         if (e.value != null && e.value!.isNotEmpty) e.key: e.value!,
     });
+  }
+
+  Map<String, String> _headers([Map<String, String>? extra]) =>
+      AuthService.I.headers();
+
+  Future<http.Response> _get(Uri uri, {Map<String, String>? extra}) {
+    return _client
+        .get(uri, headers: _headers(extra))
+        .timeout(const Duration(seconds: 12));
+  }
+
+  // ---------- New API: /api/posts (Fiber backend) ----------
+  // Returns array only (no wrapper). We convert to PagedResult.
+  Future<PagedResult<Post>> getPostsPage({int page = 1, int limit = 20}) async {
+    final b = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final uri = Uri.parse('$b/api/posts')
+        .replace(queryParameters: {'page': '$page', 'limit': '$limit'});
+
+    // Attach Authorization header if logged in
+    final res = await _get(uri);
+
+    if (res.statusCode != 200) {
+      throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
+    }
+
+    final data = jsonDecode(res.body);
+    if (data is! List) {
+      throw const HttpException('Unexpected posts response shape');
+    }
+    final items = data
+        .whereType<Map<String, dynamic>>()
+        .map((j) => Post.fromJson(j))
+        .toList();
+    final String? next = items.length >= limit ? '${page + 1}' : null;
+    return PagedResult(items: items, nextCursor: next);
   }
 
   Future<PagedResult<Post>> getPosts({
@@ -85,9 +123,7 @@ class DatabaseService {
     // log ให้เห็นชัด ๆ
     // ignore: avoid_print
     print('GET $uri');
-    final res = await _client
-        .get(uri, headers: {'Accept': 'application/json'})
-        .timeout(const Duration(seconds: 12));
+    final res = await _get(uri, extra: const {'Accept': 'application/json'});
 
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
@@ -100,5 +136,33 @@ class DatabaseService {
         list.map((e) => fromJson(e as Map<String, dynamic>)).toList();
     final next = map['nextCursor'] as String?;
     return PagedResult(items: items, nextCursor: next);
+  }
+
+  // ---------- Users ----------
+  Future<Map<String, dynamic>> getMeFiber() async {
+    final b = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final uri = Uri.parse('$b/api/user/me');
+
+    final res = await _get(uri);
+
+    if (res.statusCode != 200) {
+      throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
+    }
+
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  // GET /api/users/:id  (id is Mongo ObjectID string, not int)
+  Future<Map<String, dynamic>> getUserByObjectIdFiber(String objectId) async {
+    final b = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final uri = Uri.parse('$b/api/users/${Uri.encodeComponent(objectId)}');
+
+    final res = await _get(uri);
+
+    if (res.statusCode != 200) {
+      throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
+    }
+
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 }

@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../services/auth_service.dart';
 
 import '../components/header_section_1.dart';
 import '../components/search_bar.dart';
@@ -13,12 +14,8 @@ class ExplorePage extends StatefulWidget {
 }
 
 class _ExplorePageState extends State<ExplorePage> {
-  // ---- API base ----
-  static const _defaultBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'https://backend-xe4h.onrender.com',
-  );
-  late final _api = _TrendsApi(baseUrl: _defaultBaseUrl);
+  // Centralized base URL via AuthService
+  late final _api = _TrendsApi(baseUrl: AuthService.I.base);
 
   // ---- State ----
   final _scrollCtrl = ScrollController();

@@ -82,7 +82,27 @@ class Post {
     final authorRolesRaw = j['author_roles'] ?? j['Roles'];
     final visibilityRaw  = j['visibility_roles'];
     final profile        = j['profile_pic'] ?? j['profile pic'];
-    final dateRaw        = j['time_stamp'] ?? j['Date'];
+    // Support new backend field name 'timestamp'
+    final dateRaw        = j['timestamp'] ?? j['time_stamp'] ?? j['Date'];
+
+    // posted_as -> derive label for display if available
+    String? _postedAsLabel() {
+      final pa = j['posted_as'];
+      if (pa is Map<String, dynamic>) {
+        final lbl = (pa['label'] ?? pa['tag'])?.toString();
+        if (lbl != null && lbl.trim().isNotEmpty) return lbl.trim();
+        final pk = pa['position_key']?.toString();
+        final op = pa['org_path']?.toString();
+        if ((pk != null && pk.isNotEmpty) || (op != null && op.isNotEmpty)) {
+          if (pk != null && pk.isNotEmpty && op != null && op.isNotEmpty) {
+            return '$pk • $op';
+          }
+          return (pk ?? op)!;
+        }
+      }
+      return null;
+    }
+    final postedAs = _postedAsLabel();
 
     // ✅ NEW: read media from multiple possible keys
     final picture = _readMedia(j, ['picture', 'image', 'photo', 'images']);
@@ -90,14 +110,16 @@ class Post {
 
     return Post(
       id: _readId(j['_id']),
-      userId: (j['user_id'] ?? '').toString(),
+      userId: (j['user_id'] ?? j['uid'] ?? '').toString(),
       profilePic: (profile ?? '').toString(),
-      username: (j['username'] ?? '').toString(),
+      username: (j['username'] ?? j['name'] ?? j['uid'] ?? '').toString(),
       category: _firstCategory(j['category']),
       message: (j['message'] ?? '').toString(),
-      likeCount: _toInt(j['like_count']),
+      likeCount: _toInt(j['like_count'] ?? j['likes']),
       comment: _toInt(j['comment']),
-      authorRoles: _toStringList(authorRolesRaw),
+      authorRoles: postedAs != null
+          ? <String>[postedAs]
+          : _toStringList(authorRolesRaw),
       visibilityRoles: _toStringList(visibilityRaw),
       timeStamp: _readDate(dateRaw),
       picture: picture,

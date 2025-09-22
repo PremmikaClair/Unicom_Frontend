@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../services/auth_service.dart';
 
 import '../components/header_section.dart';
 import '../components/search_filter_bar.dart';
 import '../components/event_card.dart';
+import 'profile_page.dart';
 
 import '../controllers/event.dart';
 import '../controllers/base.dart';
@@ -20,17 +22,8 @@ class EventsPage extends StatefulWidget {
 }
 
 class _EventsPageState extends State<EventsPage> {
-  // ใช้โดเมนล้วน ๆ แล้วให้ service ต่อ path เอง
-  static const _defaultBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:3000',
-  );
 
-  // Temporary dev JWT (until mobile login is implemented)
-  static const String _devJwt =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Imthd2luQGV4YW1wbGUuY29tIiwiZXhwIjoxNzU4NjE2OTk5LCJzdWIiOiI2OGJkNmZmNmY4MDQzODgyNDIzOWI4YWEifQ.bW5hrmY4v8FWtNoOwRMGZU-DluegMuOPisxaQ94l2sA';
-
-  late final DatabaseService _db = DatabaseService(baseUrl: _defaultBaseUrl);
+  late final DatabaseService _db = DatabaseService();
   late final EventsController _ctl = EventsController(db: _db);
 
   final _scroll = ScrollController();
@@ -49,7 +42,7 @@ class _EventsPageState extends State<EventsPage> {
   @override
   void initState() {
     super.initState();
-    // For dev: fetch events directly from /api/event with JWT
+    // Fetch events from /api/event using logged-in auth headers
     _fetchEventsDirect();
     // Keep controller wiring in place (no-op while in direct mode)
     _ctl.addListener(_onCtlChanged);
@@ -115,14 +108,11 @@ class _EventsPageState extends State<EventsPage> {
       _devError = null;
     });
     try {
-      final base = _defaultBaseUrl.endsWith('/')
-          ? _defaultBaseUrl.substring(0, _defaultBaseUrl.length - 1)
-          : _defaultBaseUrl;
-      final uri = Uri.parse('$base/api/event');
-      final res = await http.get(uri, headers: {
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $_devJwt',
-      }).timeout(const Duration(seconds: 12));
+      // Build /api/event with centralized helper and attach auth headers
+      final uri = AuthService.I.apiUri('/event');
+      final res = await http
+          .get(uri, headers: AuthService.I.headers())
+          .timeout(const Duration(seconds: 12));
 
       if (res.statusCode != 200) {
         throw Exception('GET /api/event -> ${res.statusCode}: ${res.body}');
@@ -135,8 +125,10 @@ class _EventsPageState extends State<EventsPage> {
 
       DateTime? _parseTime(dynamic v) {
         if (v == null) return null;
+        // Accept epoch millis or ISO-8601 strings
         if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
-        return DateTime.tryParse(v.toString());
+        final s = v.toString();
+        return DateTime.tryParse(s);
       }
 
       String? _str(dynamic v) => v == null ? null : v.toString();
@@ -210,7 +202,14 @@ class _EventsPageState extends State<EventsPage> {
             SliverToBoxAdapter(
               child: HeaderSection(
                 onAvatarTap: () {
-                  // TODO: navigate to profile if needed
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ProfilePage()),
+                  );
+                },
+                onSettingsTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ProfilePage()),
+                  );
                 },
               ),
             ),

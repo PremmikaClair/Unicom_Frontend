@@ -70,6 +70,8 @@ func main() {
 	// after other feature routes
 	api.RegisterMembershipRoutes(apiGroup)
 	api.RegisterOrgAdminRoutes(apiGroup) // CRUD for org nodes (node-level)
+
+	api.SetupRoutesEvents(apiGroup) // /events
 	// Swagger
 	app.Get("/docs/*", swagger.HandlerDefault)
 
