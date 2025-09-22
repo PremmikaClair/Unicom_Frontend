@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../components/header_section.dart';
 import '../components/search_filter_bar.dart';
@@ -21,8 +23,12 @@ class _EventsPageState extends State<EventsPage> {
   // ใช้โดเมนล้วน ๆ แล้วให้ service ต่อ path เอง
   static const _defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://backend-xe4h.onrender.com',
+    defaultValue: 'http://127.0.0.1:3000',
   );
+
+  // Temporary dev JWT (until mobile login is implemented)
+  static const String _devJwt =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Imthd2luQGV4YW1wbGUuY29tIiwiZXhwIjoxNzU4NjE2OTk5LCJzdWIiOiI2OGJkNmZmNmY4MDQzODgyNDIzOWI4YWEifQ.bW5hrmY4v8FWtNoOwRMGZU-DluegMuOPisxaQ94l2sA';
 
   late final DatabaseService _db = DatabaseService(baseUrl: _defaultBaseUrl);
   late final EventsController _ctl = EventsController(db: _db);
@@ -35,11 +41,18 @@ class _EventsPageState extends State<EventsPage> {
   bool _stalled = false;
   String? _hardError; // เอาไว้แสดงข้อความถ้าค้าง/พัง
 
+  // Direct fetch (dev) state
+  bool _devLoading = true;
+  String? _devError;
+  List<AppEvent> _devItems = const [];
+
   @override
   void initState() {
     super.initState();
+    // For dev: fetch events directly from /api/event with JWT
+    _fetchEventsDirect();
+    // Keep controller wiring in place (no-op while in direct mode)
     _ctl.addListener(_onCtlChanged);
-    _ctl.refresh(); // เริ่มโหลด
     _scroll.addListener(_maybeLoadMore);
   }
 
@@ -85,12 +98,91 @@ class _EventsPageState extends State<EventsPage> {
     setState(() {
       _stalled = false;
       _hardError = null;
+      _devError = null;
     });
     try {
-      await _ctl.refresh();
+      await _fetchEventsDirect();
     } catch (e) {
       setState(() {
         _hardError = 'รีเฟรชไม่สำเร็จ: $e';
+      });
+    }
+  }
+
+  Future<void> _fetchEventsDirect() async {
+    setState(() {
+      _devLoading = true;
+      _devError = null;
+    });
+    try {
+      final base = _defaultBaseUrl.endsWith('/')
+          ? _defaultBaseUrl.substring(0, _defaultBaseUrl.length - 1)
+          : _defaultBaseUrl;
+      final uri = Uri.parse('$base/api/event');
+      final res = await http.get(uri, headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $_devJwt',
+      }).timeout(const Duration(seconds: 12));
+
+      if (res.statusCode != 200) {
+        throw Exception('GET /api/event -> ${res.statusCode}: ${res.body}');
+      }
+
+      final data = jsonDecode(res.body);
+      if (data is! List) {
+        throw Exception('Unexpected response shape');
+      }
+
+      DateTime? _parseTime(dynamic v) {
+        if (v == null) return null;
+        if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+        return DateTime.tryParse(v.toString());
+      }
+
+      String? _str(dynamic v) => v == null ? null : v.toString();
+
+      final items = <AppEvent>[];
+      for (final e in data) {
+        if (e is! Map) continue;
+        final ev = e['event'] as Map<String, dynamic>?;
+        final schedules = (e['schedules'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+        if (ev == null) continue;
+
+        // pick first schedule (if exists) as primary time/location
+        DateTime start = DateTime.now();
+        DateTime? end;
+        String? loc;
+        if (schedules.isNotEmpty) {
+          final s0 = schedules.first;
+          start = _parseTime(s0['time_start']) ?? start;
+          end = _parseTime(s0['time_end']);
+          loc = _str(s0['location']);
+        }
+
+        items.add(AppEvent(
+          id: _str(ev['id']) ?? _str(ev['_id']) ?? '',
+          title: _str(ev['topic']) ?? '(untitled)',
+          description: _str(ev['description']),
+          category: null,
+          role: null,
+          location: loc,
+          startTime: start,
+          endTime: end,
+          imageUrl: null,
+          organizer: _str(ev['org_of_content']),
+          isFree: null,
+          likeCount: null,
+        ));
+      }
+
+      setState(() {
+        _devItems = items;
+        _devLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _devError = e.toString();
+        _devLoading = false;
       });
     }
   }
@@ -180,11 +272,38 @@ class _EventsPageState extends State<EventsPage> {
             ),
 
             // เนื้อหา
-            AnimatedBuilder(
-              animation: _ctl,
-              builder: (context, _) {
-                // กรณีโหลดค้างนานผิดปกติ
-                if (_stalled) {
+            // Direct dev render path (JWT-protected /api/event)
+            Builder(builder: (context) {
+              if (_devLoading) {
+                return const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 40),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                );
+              }
+
+              if (_devError != null) {
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 40, 16, 0),
+                    child: Column(
+                      children: [
+                        Text(
+                          'โหลดอีเวนต์ผิดพลาด: $_devError',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton(onPressed: _onRefresh, child: const Text('ลองใหม่')),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              // กรณีโหลดค้างนานผิดปกติ (fallback guard)
+              if (_stalled) {
                   return SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 40, 16, 0),
@@ -206,19 +325,10 @@ class _EventsPageState extends State<EventsPage> {
                       ),
                     ),
                   );
-                }
+              }
 
-                if (_ctl.loading) {
-                  return const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 40),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  );
-                }
-
-                final items = _ctl.items;
-                if (items.isEmpty) {
+              final items = _devItems;
+              if (items.isEmpty) {
                   return SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
@@ -235,33 +345,27 @@ class _EventsPageState extends State<EventsPage> {
                       ),
                     ),
                   );
-                }
+              }
 
-                // ใช้ SliverList + SliverChildBuilderDelegate (ถูกต้องตาม Flutter)
-                return SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) {
-                      if (i == items.length) {
-                        return _ctl.fetchingMore
-                            ? const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 16),
-                                child: Center(child: CircularProgressIndicator()),
-                              )
-                            : const SizedBox(height: 16);
-                      }
-                      final e = items[i] as AppEvent;
-                      return EventCard(
-                        event: e,
-                        onTap: () {
-                          // TODO: Navigator.push(... EventDetailPage(event: e))
-                        },
-                      );
-                    },
-                    childCount: items.length + 1,
-                  ),
-                );
-              },
-            ),
+              // ใช้ SliverList + SliverChildBuilderDelegate (ถูกต้องตาม Flutter)
+              return SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    if (i == items.length) {
+                      return const SizedBox(height: 16);
+                    }
+                    final e = items[i];
+                    return EventCard(
+                      event: e,
+                      onTap: () {
+                        // TODO: Navigator.push(... EventDetailPage(event: e))
+                      },
+                    );
+                  },
+                  childCount: items.length + 1,
+                ),
+              );
+            }),
 
             const SliverToBoxAdapter(child: SizedBox(height: 80)),
           ],
