@@ -12,7 +12,7 @@ class AuthService {
   // Base like http://127.0.0.1:3000 (no trailing /api here)
   final String base = const String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:3000',
+    defaultValue: 'https://frontend-23os.onrender.com',
   );
 
   String? _token;
