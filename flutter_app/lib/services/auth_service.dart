@@ -6,22 +6,34 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - Stores JWT access token in SharedPreferences
 /// - Builds Authorization headers for API calls
 class AuthService {
-  AuthService._();
-  static final AuthService I = AuthService._();
-
-  // Base like http://127.0.0.1:3000 (no trailing /api here)
-  final String base = const String.fromEnvironment(
-    'API_BASE_URL',
+  // Define both API URLs
+  final String base1 = const String.fromEnvironment(
+    'API_BASE_URL_1',
     defaultValue: 'https://frontend-23os.onrender.com',
   );
 
-  String? _token;
-  bool _inited = false;
+  final String base2 = const String.fromEnvironment(
+    'API_BASE_URL_2',
+    defaultValue:
+        'https://backend-gezu.onrender.com', // Replace with your second API
+  );
+
+  // Add a selector to choose which API to use
+  bool _useSecondAPI = false;
 
   String get apiBase {
+    final base = _useSecondAPI ? base2 : base1;
     final b = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
     return '$b/api';
   }
+
+  // Method to switch between APIs
+  void useSecondAPI(bool useSecond) {
+    _useSecondAPI = useSecond;
+  }
+
+  String? _token;
+  bool _inited = false;
 
   String? get token => _token;
   bool get isAuthed => (_token != null && _token!.isNotEmpty);
@@ -47,17 +59,20 @@ class AuthService {
     final p = path.startsWith('/') ? path : '/$path';
     final u = Uri.parse('$apiBase$p');
     if (query == null) return u;
-    return u.replace(queryParameters: {
-      for (final e in query.entries)
-        if (e.value.isNotEmpty) e.key: e.value,
-    });
+    return u.replace(
+      queryParameters: {
+        for (final e in query.entries)
+          if (e.value.isNotEmpty) e.key: e.value,
+      },
+    );
   }
 
   Map<String, String> headers({Map<String, String>? extra}) {
     return {
       'Accept': 'application/json',
       if (extra != null) ...extra,
-      if (_token != null && _token!.isNotEmpty) 'Authorization': 'Bearer $_token',
+      if (_token != null && _token!.isNotEmpty)
+        'Authorization': 'Bearer $_token',
     };
   }
 
@@ -71,7 +86,10 @@ class AuthService {
     final res = await http
         .post(
           uri,
-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
           body: jsonEncode({'email': email.trim(), 'password': password}),
         )
         .timeout(const Duration(seconds: 12));
