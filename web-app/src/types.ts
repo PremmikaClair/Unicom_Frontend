@@ -107,6 +107,8 @@ export type PostDoc = {
   timestamp: string;
   likes: number;
   likedBy: string[];
+  media?: string[];
+  commentCount?: number;
 
   posted_as?: {                 // posting “as”
     org_path?: string;
@@ -155,4 +157,34 @@ export type OrgUnit = {
   sort?: number;
   status?: "active" | "archived";
   visibility?: "public" | "private";
+};
+
+// -------- Events --------
+export type EventDoc = {
+  id?: string;                 // ObjectId hex
+  _id?: string;                // compatibility if list returns _id
+  node_id?: string;
+  topic: string;
+  description?: string;
+  max_participation?: number;
+  posted_as?: { org_path?: string; position_key?: string; label?: string };
+  visibility?: { access?: string; audience?: any[] };
+  org_of_content?: string;
+  status?: "active" | "hidden" | string;
+  have_form?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  schedules?: Array<{ date: string; start_time?: string; end_time?: string; time_start?: string; time_end?: string; location?: string; description?: string }>;
+};
+
+// -------- Comments --------
+export type CommentDoc = {
+  id?: string;
+  _id?: string;             // not expected, but safe
+  postId?: string;
+  userId?: string;
+  text: string;
+  createdAt?: string;
+  updatedAt?: string;
+  likeCount?: number;
 };

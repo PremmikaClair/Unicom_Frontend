@@ -32,6 +32,14 @@ class EventCard extends StatelessWidget {
       chips.add(const Chip(label: Text('Free'), visualDensity: VisualDensity.compact));
     }
 
+    String initials(String s) {
+      final parts = s.trim().split(RegExp(r"\s+"));
+      final a = parts.isNotEmpty ? parts.first : '';
+      final b = parts.length > 1 ? parts[1] : '';
+      final ini = ((a.isNotEmpty ? a[0] : '') + (b.isNotEmpty ? b[0] : '')).toUpperCase();
+      return ini.isEmpty ? 'E' : ini;
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -60,9 +68,18 @@ class EventCard extends StatelessWidget {
                   width: 64, height: 64,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(8),
-                    color: theme.colorScheme.surfaceVariant,
+                    color: theme.colorScheme.primary.withOpacity(.10),
+                    border: Border.all(color: theme.colorScheme.primary.withOpacity(.25)),
                   ),
-                  child: const Icon(Icons.event),
+                  child: Center(
+                    child: Text(
+                      initials(event.title),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
                 ),
               const SizedBox(width: 12),
               // Textual content
@@ -73,7 +90,24 @@ class EventCard extends StatelessWidget {
                     Text(event.title,
                         style: theme.textTheme.titleMedium,
                         maxLines: 2, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
+                    if ((event.organizer ?? '').isNotEmpty) ...[
+                      Row(
+                        children: [
+                          const Icon(Icons.badge_outlined, size: 16),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              event.organizer!,
+                              style: theme.textTheme.bodySmall,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    const SizedBox(height: 2),
                     Row(
                       children: [
                         const Icon(Icons.access_time, size: 16),

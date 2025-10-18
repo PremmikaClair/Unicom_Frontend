@@ -36,8 +36,8 @@ class UserProfile {
     return UserProfile(
       id: _toInt(j['id'] ?? j['seqID'] ?? j['SeqID']),
       oid: (j['_id']?.toString()),
-      firstName: j['firstName']?.toString(),
-      lastName: j['lastName']?.toString(),
+      firstName: (j['firstName'] ?? j['firstname'])?.toString(),
+      lastName: (j['lastName'] ?? j['lastname'])?.toString(),
       email: j['email']?.toString(),
       studentId: j['student_id']?.toString(),
       advisorId: j['advisor_id']?.toString(),
@@ -48,4 +48,3 @@ class UserProfile {
     );
   }
 }
-

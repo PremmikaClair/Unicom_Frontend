@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import type { User, Membership, Position } from "../types";
 import useAbilities from "../hooks/useAbilities";
+import RoleCard from "./RoleCard";
 import {
   getUsersPaged,
   updateUser,
@@ -19,21 +20,10 @@ const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// Pretty label helper (e.g., "Head • COM • ENG")
-function membershipLabel(m: Membership, positions: Position[]) {
-  const pos = positions.find((p) => p.key === m.position_key);
-  const role =
-    (pos?.display && (pos.display.en || Object.values(pos.display)[0])) ||
-    pos?.key ||
-    m.position_key;
 
-  const orgBits = m.org_path
-    .split("/")
-    .filter(Boolean)
-    .reverse()
-    .map((bit) => bit.toUpperCase());
-
-  return [role, ...orgBits].join(" • ");
+function sortMemberships(mems: Membership[]): Membership[] {
+  const pri = (m: Membership) => (m.org_path?.startsWith("/fac") ? 0 : m.org_path?.startsWith("/club") ? 1 : 2);
+  return (mems || []).slice().sort((a, b) => pri(a) - pri(b));
 }
 
 const UsersTable: React.FC = () => {
@@ -71,27 +61,28 @@ useEffect(() => {
       setNextCursor(nextCursor);
       setPositions(pos);
 
-      // fetch memberships per user (MVP, N+1)
-      const withStudentId = base.filter(u => !!u.student_id);
-      const results = await Promise.allSettled(
-        withStudentId.map(async (u) => {
-          const res = await getMembershipsRaw(u.student_id!);
-          return { key: getKey(u), memberships: res.memberships || [] };
-        })
-      );
-
-      // merge memberships into users
-      setUsers(prev => {
-        const map = new Map(prev.map(u => [getKey(u), { ...u }]));
-        for (const r of results) {
-          if (r.status === "fulfilled") {
-            const { key, memberships } = r.value;
-            const ex = map.get(key);
-            if (ex) map.set(key, { ...ex, memberships });
+      // If memberships already included from backend, skip N+1 fetch.
+      const hasIncluded = base.some(u => Array.isArray(u.memberships) && u.memberships.length > 0);
+      if (!hasIncluded) {
+        const withStudentId = base.filter(u => !!u.student_id);
+        const results = await Promise.allSettled(
+          withStudentId.map(async (u) => {
+            const res = await getMembershipsRaw(u.student_id!);
+            return { key: getKey(u), memberships: res.memberships || [] };
+          })
+        );
+        setUsers(prev => {
+          const map = new Map(prev.map(u => [getKey(u), { ...u }]));
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              const { key, memberships } = r.value;
+              const ex = map.get(key);
+              if (ex) map.set(key, { ...ex, memberships });
+            }
           }
-        }
-        return Array.from(map.values());
-      });
+          return Array.from(map.values());
+        });
+      }
 
     } catch (e: any) {
       console.error(e);
@@ -221,21 +212,24 @@ useEffect(() => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">User Management</h1>
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          👤 User Management
+          <span className="text-xs font-normal text-gray-500">cute mode</span>
+        </h1>
         <div className="flex items-center gap-3">
           {error && <span className="text-sm text-red-600">{error}</span>}
           <button
             onClick={onCreate}
-            className="px-3 py-1 bg-gray-800 text-white rounded text-sm inline-flex items-center gap-1"
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-sm inline-flex items-center gap-1 shadow-sm"
           >
             <PlusIcon /> New User
           </button>
         </div>
       </div>
 
-      <table className="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm">
+      <table className="min-w-full bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
         <thead>
-          <tr className="bg-gray-100 text-left text-sm font-semibold text-gray-600">
+          <tr className="bg-gray-50/80 text-left text-sm font-semibold text-gray-600">
             <th className="p-3">Student ID</th>
             <th className="p-3">Name</th>
             <th className="p-3">Email</th>
@@ -243,24 +237,19 @@ useEffect(() => {
             <th className="p-3">Actions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-gray-100">
           {users.map((user) => {
             const key = getKey(user);
             return (
               <React.Fragment key={key}>
-                <tr className="text-sm text-gray-700 hover:bg-gray-50">
+                <tr className="text-sm text-gray-800 hover:bg-gray-50">
                   <td className="p-3">{user.student_id ?? "-"}</td>
                   <td className="p-3">{user.firstName} {user.lastName}</td>
                   <td className="p-3">{user.email}</td>
                   <td className="p-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(user.memberships ?? []).map((m, i) => (
-                        <span
-                          key={`${key}-m-${i}`}
-                          className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded"
-                        >
-                          {membershipLabel(m, positions)}
-                        </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {sortMemberships(user.memberships ?? []).map((m, i) => (
+                        <RoleCard key={`${key}-m-${i}`} membership={m} positions={positions} />
                       ))}
                       {(user.memberships ?? []).length === 0 && (
                         <span className="text-xs text-gray-400">—</span>
@@ -272,13 +261,13 @@ useEffect(() => {
                     <div className="flex gap-3">
                       <button
                         onClick={() => handleToggleInfo(user)}
-                        className="text-gray-600 hover:underline"
+                        className="text-xs px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 shadow-sm"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => onDelete(user)}
-                        className="text-red-600 hover:underline"
+                        className="text-xs px-3 py-1 rounded-full bg-red-50 hover:bg-red-100 text-red-700 shadow-sm"
                       >
                         Delete
                       </button>
@@ -296,7 +285,7 @@ useEffect(() => {
                           <div><strong>Name:</strong> {user.firstName} {user.lastName}</div>
                           <div><strong>Student ID:</strong> {user.student_id ?? "-"}</div>
                           <div className="md:col-span-2 flex gap-2 mt-1">
-                            <button onClick={() => setEditing(true)} className="text-blue-600 hover:underline text-sm">
+                            <button onClick={() => setEditing(true)} className="text-xs px-3 py-1 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-700 shadow-sm">
                               Edit
                             </button>
                           </div>
@@ -343,11 +332,9 @@ useEffect(() => {
                           <div className="md:col-span-2">
                             <label className="block text-sm font-medium mb-1">Memberships</label>
                             <div className="text-sm text-gray-600">View-only here. Manage assignments in Roles page.</div>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {(editableUser.memberships ?? []).filter(m => m.active).map((m, i) => (
-                                <span key={i} className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded">
-                                  {membershipLabel(m, positions)}
-                                </span>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {sortMemberships((editableUser.memberships ?? []).filter(m => m.active)).map((m, i) => (
+                                <RoleCard key={i} membership={m} positions={positions} />
                               ))}
                               {(editableUser.memberships ?? []).filter(m => m.active).length === 0 && (
                                 <span className="text-xs text-gray-400">—</span>
@@ -356,23 +343,8 @@ useEffect(() => {
                           </div>
 
                           <div className="md:col-span-2 flex gap-2 mt-2">
-                            <button
-                              onClick={handleSave}
-                              className="px-3 py-1 bg-green-500 text-white rounded text-sm"
-                              disabled={loading}
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditing(false);
-                                const original = users.find((u) => getKey(u) === getKey(editableUser));
-                                if (original) setEditableUser({ ...original, memberships: original.memberships ?? [] });
-                              }}
-                              className="px-3 py-1 bg-gray-300 rounded text-sm"
-                            >
-                              Cancel
-                            </button>
+                            <button onClick={handleSave} className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full text-sm shadow-sm" disabled={loading}>Save</button>
+                            <button onClick={() => { setEditing(false); const original = users.find((u) => getKey(u) === getKey(editableUser)); if (original) setEditableUser({ ...original, memberships: original.memberships ?? [] }); }} className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-full text-sm">Cancel</button>
                           </div>
                         </div>
                       )}

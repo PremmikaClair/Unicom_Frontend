@@ -6,6 +6,8 @@ import UsersPage from "./features/users/UserPage";
 import RolesPage from "./features/roles/RolesPage";
 import PostPage from "./features/posts/PostPage";
 import EventsPage from "./features/events/EventsPage";
+import CreateEventPage from "./features/events/CreateEventPage";
+import ParticipantManagementPage from "./features/events/ParticipantManagementPage";
 import AdminLayout from "./layouts/AdminLayout";
 
 export default function App() {
@@ -22,6 +24,8 @@ export default function App() {
           <Route path="/roles" element={<RolesPage />} />
           <Route path="/post"  element={<PostPage />} />
           <Route path="/events"  element={<EventsPage />} />
+          <Route path="/events/create" element={<CreateEventPage />} />
+          <Route path="/events/participants" element={<ParticipantManagementPage />} />
           {/* optional: catch-all back to home */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

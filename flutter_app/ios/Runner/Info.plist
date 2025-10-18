@@ -45,5 +45,44 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Allow HTTP for local dev media/API (ATS) -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Easiest for development; consider narrowing for production -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<!-- Allow insecure loads specifically for AVFoundation (video/audio) -->
+		<key>NSAllowsArbitraryLoadsForMedia</key>
+		<true/>
+		<!-- Allow local networking (e.g., 127.0.0.1, LAN IPs) -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<!-- Allow dev media host (HTTP, non-standard port) -->
+			<key>45.144.166.252</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

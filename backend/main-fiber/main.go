@@ -76,5 +76,5 @@ func main() {
 	app.Get("/docs/*", swagger.HandlerDefault)
 
 	port := getEnv("PORT", "3000")
-	log.Fatal(app.Listen(":" + port))
+	log.Fatal(app.Listen("0.0.0.0:" + port))
 }

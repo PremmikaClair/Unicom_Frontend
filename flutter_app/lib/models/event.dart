@@ -13,6 +13,8 @@ class AppEvent {
   final String? organizer;  // display name / organization
   final bool? isFree;       // if your backend provides it
   final int? likeCount;     // if you want to sort/popular
+  final int? capacity;      // backend: event.max_participation
+  final bool? haveForm;     // backend: event.have_form
 
   const AppEvent({
     required this.id,
@@ -27,6 +29,8 @@ class AppEvent {
     this.organizer,
     this.isFree,
     this.likeCount,
+    this.capacity,
+    this.haveForm,
   });
 
   factory AppEvent.fromJson(Map<String, dynamic> json) {
@@ -47,10 +51,13 @@ class AppEvent {
       location: json['location']?.toString(),
       startTime: parseTime(json['startTime']),
       endTime: json['endTime'] != null ? parseTime(json['endTime']) : null,
-      imageUrl: json['imageUrl']?.toString(),
+      // Accept multiple keys from backend for the event image
+      imageUrl: (json['imageUrl'] ?? json['image_url'] ?? json['pictureURL'] ?? json['picture_url'])?.toString(),
       organizer: json['organizer']?.toString(),
       isFree: json['isFree'] is bool ? json['isFree'] as bool : null,
       likeCount: json['likeCount'] is int ? json['likeCount'] as int : null,
+      capacity: json['capacity'] is int ? json['capacity'] as int : int.tryParse('${json['capacity']}'),
+      haveForm: json['have_form'] is bool ? json['have_form'] as bool : null,
     );
   }
 
@@ -67,5 +74,7 @@ class AppEvent {
     'organizer': organizer,
     'isFree': isFree,
     'likeCount': likeCount,
+    'capacity': capacity,
+    'have_form': haveForm,
   };
 }

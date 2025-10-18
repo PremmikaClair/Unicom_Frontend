@@ -23,6 +23,17 @@ const ScopeOptions = [
 
 const EffectOptions = [{ value: "allow", label: "Allow" }]; // deny reserved for future
 
+// Path tag helper (like Role tag without position)
+function pathLabel(path?: string) {
+  const bits = (path || "/").split("/").filter(Boolean).reverse().map(b => b.toUpperCase());
+  return bits.join(" • ") || "/";
+}
+function pathColorClasses(path?: string) {
+  if ((path || "").startsWith("/club")) return "bg-orange-100 text-orange-700 ring-1 ring-orange-200";
+  if ((path || "").startsWith("/fac")) return "bg-green-100 text-green-700 ring-1 ring-green-200";
+  return "bg-blue-100 text-blue-700 ring-1 ring-blue-200";
+}
+
 /* --------- Tree component (read-only) --------- */
 const TreeNode: React.FC<{
   node: OrgUnitNode;
@@ -35,16 +46,17 @@ const TreeNode: React.FC<{
   return (
     <div className="ml-3">
       <button
-        className={`text-left px-2 py-0.5 rounded w-full ${
-          isSelected ? "bg-blue-100" : "hover:bg-gray-100"
+        className={`text-left px-2 py-1 rounded-md w-full transition ${
+          isSelected ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200" : "hover:bg-gray-50"
         }`}
         onClick={() => onSelect(node.org_path)}
         title={node.org_path}
       >
-        {label} <span className="text-xs text-gray-500">({node.org_path})</span>
+        <span className="font-medium">{label}</span>
+        <span className="text-xs text-gray-500"> ({node.org_path})</span>
       </button>
       {node.children?.length ? (
-        <div className="ml-3 border-l pl-2">
+        <div className="ml-3 border-l pl-2 border-gray-200">
           {node.children.map((ch) => (
             <TreeNode key={ch.org_path} node={ch} selected={selected} onSelect={onSelect} />
           ))}
@@ -53,6 +65,11 @@ const TreeNode: React.FC<{
     </div>
   );
 };
+
+function positionLabel(key: string, positions: Position[]) {
+  const pos = positions.find(p => p.key === key);
+  return (pos?.display && (pos.display.en || Object.values(pos.display)[0])) || pos?.key || key;
+}
 
 /* --------- Policy form --------- */
 const PolicyForm: React.FC<{
@@ -88,9 +105,9 @@ const PolicyForm: React.FC<{
   return (
     <form onSubmit={submit} className="space-y-3">
       <div>
-        <label className="block text-sm font-medium">Position key</label>
+        <label className="block text-sm font-medium text-gray-700">Position key</label>
         <input
-          className="border rounded px-2 py-1 w-full"
+          className="border rounded px-2 py-1 w-full focus:ring-2 focus:ring-emerald-300"
           placeholder="head | member | student"
           value={positionKey}
           onChange={(e) => setPositionKey(e.target.value)}
@@ -98,9 +115,9 @@ const PolicyForm: React.FC<{
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Org prefix</label>
+        <label className="block text-sm font-medium text-gray-700">Org prefix</label>
         <input
-          className="border rounded px-2 py-1 w-full"
+          className="border rounded px-2 py-1 w-full focus:ring-2 focus:ring-emerald-300"
           placeholder="/faculty/ or /club/"
           value={orgPrefix}
           onChange={(e) => setOrgPrefix(e.target.value)}
@@ -110,16 +127,16 @@ const PolicyForm: React.FC<{
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium">Scope</label>
-          <select className="border rounded px-2 py-1 w-full" value={scope} onChange={(e) => setScope(e.target.value as any)}>
+          <label className="block text-sm font-medium text-gray-700">Scope</label>
+          <select className="border rounded px-2 py-1 w-full focus:ring-2 focus:ring-emerald-300" value={scope} onChange={(e) => setScope(e.target.value as any)}>
             {ScopeOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium">Effect</label>
-          <select className="border rounded px-2 py-1 w-full" value={effect} onChange={(e) => setEffect(e.target.value as any)}>
+          <label className="block text-sm font-medium text-gray-700">Effect</label>
+          <select className="border rounded px-2 py-1 w-full focus:ring-2 focus:ring-emerald-300" value={effect} onChange={(e) => setEffect(e.target.value as any)}>
             {EffectOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
@@ -355,9 +372,9 @@ const OrgPoliciesPage: React.FC = () => {
   return (
     <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
       {/* Left: Org tree */}
-      <div className="md:col-span-1 border rounded p-3">
+      <div className="md:col-span-1 border rounded-xl p-3 bg-white shadow-sm">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="font-semibold">Organization</h2>
+          <h2 className="font-semibold text-emerald-800">Organization</h2>
           {loadingTree && <span className="text-xs text-gray-500">Loading…</span>}
         </div>
         {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
@@ -373,18 +390,23 @@ const OrgPoliciesPage: React.FC = () => {
       </div>
 
       {/* Right: Policies */}
-      <div className="md:col-span-2 border rounded p-3 space-y-4">
+      <div className="md:col-span-2 space-y-4">
         {/* Membership assignments at selected node */}
-        <div className="border rounded p-3 space-y-3">
-          <h3 className="font-medium">Assignments at {selectedOrg}</h3>
+        <div className="border rounded-xl p-3 bg-white shadow-sm space-y-3">
+          <h3 className="font-medium text-emerald-800 flex items-center gap-2">
+            Roles Assignments at
+            {selectedOrg && (
+              <span className={`${pathColorClasses(selectedOrg)} inline-block rounded-full text-[11px] px-2.5 py-0.5`}>{pathLabel(selectedOrg)}</span>
+            )}
+          </h3>
           <div className="text-xs text-gray-600">Search a user to assign a position at this node.</div>
           <div className="flex flex-wrap items-center gap-2">
-            <input className="border rounded px-2 py-1 text-sm flex-1 min-w-[240px]" placeholder="Search by name / email / student id" value={assignQuery} onChange={e => setAssignQuery(e.target.value)} />
-            <button onClick={runSearch} disabled={loadingAssign} className="px-2 py-1 text-xs border rounded">Search</button>
+            <input className="border rounded px-2 py-1 text-sm flex-1 min-w-[240px] focus:ring-2 focus:ring-emerald-300" placeholder="Search by name / email / student id" value={assignQuery} onChange={e => setAssignQuery(e.target.value)} />
+            <button onClick={runSearch} disabled={loadingAssign} className="px-3 py-1.5 text-xs rounded-full bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm disabled:opacity-50">Search</button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-sm text-gray-700">Assign as</label>
-            <select className="border rounded px-2 py-1 text-sm" value={assignPosKey} onChange={e => setAssignPosKey(e.target.value)}>
+            <select className="border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-300" value={assignPosKey} onChange={e => setAssignPosKey(e.target.value)}>
               <option value="">Select position…</option>
               {usablePositions.map(p => (
                 <option key={p.key} value={p.key}>{(p.display && (p.display.en || Object.values(p.display)[0])) || p.key}</option>
@@ -395,12 +417,12 @@ const OrgPoliciesPage: React.FC = () => {
             )}
           </div>
           {assignResults.length > 0 && (
-            <div className="mt-2 border rounded">
+            <div className="mt-2 border rounded-lg overflow-hidden">
               {assignResults.map(u => {
                 const key = u._id || u.email || String(u.id);
                 const checked = !!selectedUserKeys[key];
                 return (
-                  <label key={key} className="flex items-center justify-between px-2 py-1 border-t first:border-t-0">
+                  <label key={key} className="flex items-center justify-between px-2 py-1 border-t first:border-t-0 hover:bg-emerald-50/40">
                     <div className="flex items-center gap-2">
                       <input type="checkbox" checked={checked} onChange={(e) => toggleSelectUser(u, e.target.checked)} />
                       <div className="text-sm">{u.firstName} {u.lastName} <span className="text-gray-500">({u.email})</span></div>
@@ -410,7 +432,7 @@ const OrgPoliciesPage: React.FC = () => {
                 );
               })}
               <div className="flex items-center justify-end gap-2 p-2">
-                <button onClick={assignSelectedUsers} disabled={!abilities["membership:assign"] || loadingAssign || !assignPosKey} className={`px-2 py-1 text-xs border rounded ${!abilities["membership:assign"] ? 'opacity-50 cursor-not-allowed' : ''}`}>Assign selected</button>
+                <button onClick={assignSelectedUsers} disabled={!abilities["membership:assign"] || loadingAssign || !assignPosKey} className={`px-3 py-1.5 text-xs rounded-full bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm ${!abilities["membership:assign"] ? 'opacity-50 cursor-not-allowed' : ''}`}>Assign selected</button>
               </div>
             </div>
           )}
@@ -418,12 +440,12 @@ const OrgPoliciesPage: React.FC = () => {
           {/* Current memberships at this node */}
           <div className="mt-3">
             <div className="flex items-center justify-between mb-1">
-              <div className="text-sm font-medium">Active memberships here</div>
+              <div className="text-sm font-medium text-emerald-800">Active roles here</div>
               <div className="text-xs text-gray-600">Active users (any position): {Array.from(new Set(orgMemberships.map(m => (m.user?._id || m.user?.email || String((m as any).user_id || m._id))))).length}</div>
             </div>
-            <div className="overflow-x-auto border rounded">
+            <div className="overflow-x-auto border rounded-lg">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-100">
+                <thead className="bg-emerald-50/70">
                   <tr>
                     <th className="p-2 text-left">Name</th>
                     <th className="p-2 text-left">Student ID</th>
@@ -434,12 +456,12 @@ const OrgPoliciesPage: React.FC = () => {
                 <tbody>
                   {orgMemberships.length ? (
                     orgMemberships.map((m, i) => (
-                      <tr key={m._id || i} className="border-t">
+                      <tr key={m._id || i} className="border-t hover:bg-emerald-50/40">
                         <td className="p-2">{((m.user?.firstName || '') + ' ' + (m.user?.lastName || '')).trim() || m.user?.email || 'User'}</td>
                         <td className="p-2">{m.user?.student_id || '-'}</td>
-                        <td className="p-2">{m.position_key}</td>
+                        <td className="p-2">{positionLabel(m.position_key, positions)}</td>
                         <td className="p-2">
-                          <button onClick={() => revokeMembership(m)} disabled={!abilities["membership:revoke"]} className={`text-red-600 text-xs ${!abilities["membership:revoke"] ? 'opacity-50 cursor-not-allowed' : ''}`}>Revoke</button>
+                          <button onClick={() => revokeMembership(m)} disabled={!abilities["membership:revoke"]} className={`text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 hover:bg-red-100 shadow-sm ${!abilities["membership:revoke"] ? 'opacity-50 cursor-not-allowed' : ''}`}>Remove</button>
                         </td>
                       </tr>
                     ))
@@ -460,7 +482,7 @@ const OrgPoliciesPage: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Policies</h2>
+          <h2 className="font-semibold text-emerald-800">Permissions</h2>
           {loadingPolicies && <span className="text-xs text-gray-500">Loading…</span>}
         </div>
 
@@ -468,16 +490,16 @@ const OrgPoliciesPage: React.FC = () => {
         <div className="grid md:grid-cols-2 gap-6">
           {canPolicyWrite ? (
             <>
-              <div className="border rounded p-3">
-                <h3 className="font-medium mb-2">Create Policy</h3>
+              <div className="border rounded-xl p-3 bg-white shadow-sm">
+                <h3 className="font-medium mb-2">Create Permission</h3>
                 <PolicyForm
                   selectedOrg={selectedOrg}
                   onSubmit={onCreate}
                   mode="create"
                 />
               </div>
-              <div className="border rounded p-3">
-                <h3 className="font-medium mb-2">Upsert Policy (by position_key + org_prefix + scope)</h3>
+              <div className="border rounded-xl p-3 bg-white shadow-sm">
+                <h3 className="font-medium mb-2">Upsert Permission (by position_key + org_prefix + scope)</h3>
                 <PolicyForm
                   selectedOrg={selectedOrg}
                   onSubmit={onUpsert}
@@ -486,17 +508,17 @@ const OrgPoliciesPage: React.FC = () => {
               </div>
             </>
           ) : (
-            <div className="border rounded p-3 text-sm text-gray-600">
-              You don’t have permission to edit policies at {selectedOrg}.
+            <div className="border rounded-xl p-3 bg-white shadow-sm text-sm text-gray-600">
+              You don’t have permission to edit permissions at {selectedOrg}.
             </div>
           )}
         </div>
 
         {/* List */}
-        <div className="border rounded p-3">
-          <h3 className="font-medium mb-2">Policies matching selection</h3>
-          <table className="w-full text-sm border">
-            <thead className="bg-gray-100">
+        <div className="border rounded-xl p-3 bg-white shadow-sm">
+          <h3 className="font-medium mb-2">Permissions matching selection</h3>
+          <table className="w-full text-sm border rounded-lg overflow-hidden">
+            <thead className="bg-emerald-50/70">
               <tr>
                 <th className="p-2 text-left">Position</th>
                 <th className="p-2 text-left">Org Prefix</th>
@@ -511,7 +533,7 @@ const OrgPoliciesPage: React.FC = () => {
             <tbody>
               {selectedPolicies.length ? (
                 selectedPolicies.map((p) => (
-                  <tr key={(p._id ?? "") + p.position_key + p.where.org_prefix + p.scope} className="border-t">
+                  <tr key={(p._id ?? "") + p.position_key + p.where.org_prefix + p.scope} className="border-t hover:bg-emerald-50/40">
                     <td className="p-2">{p.position_key}</td>
                     <td className="p-2">{p.where.org_prefix}</td>
                     <td className="p-2">{p.scope}</td>
@@ -519,7 +541,7 @@ const OrgPoliciesPage: React.FC = () => {
                     <td className="p-2">
                       <div className="flex flex-wrap gap-1">
                         {p.actions.map((a) => (
-                          <span key={a} className="px-2 py-0.5 bg-gray-100 rounded">{a}</span>
+                          <span key={a} className="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200">{a}</span>
                         ))}
                       </div>
                     </td>
@@ -527,10 +549,10 @@ const OrgPoliciesPage: React.FC = () => {
                     <td className="p-2">{p.created_at ? new Date(p.created_at).toLocaleString() : "—"}</td>
                     <td className="p-2">
                       <button
-                        className="text-red-600 hover:underline disabled:opacity-50"
+                        className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 hover:bg-red-100 shadow-sm disabled:opacity-50"
                         onClick={() => onDelete(p)}
                         disabled={!canEdit}
-                        title={!canEdit ? "No permission" : "Delete policy"}
+                        title={!canEdit ? "No permission" : "Delete permission"}
                       >
                         Delete
                       </button>

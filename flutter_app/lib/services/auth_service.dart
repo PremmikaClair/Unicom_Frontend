@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,34 +8,33 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - Stores JWT access token in SharedPreferences
 /// - Builds Authorization headers for API calls
 class AuthService {
-  // Define both API URLs
-  final String base1 = const String.fromEnvironment(
-    'API_BASE_URL_1',
-    defaultValue: 'https://frontend-23os.onrender.com',
+  AuthService._();
+  static final AuthService I = AuthService._();
+
+  // Base like http://127.0.0.1:8000 (main-webbase)
+  final String base = const String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://127.0.0.1:8000',
   );
-
-  final String base2 = const String.fromEnvironment(
-    'API_BASE_URL_2',
-    defaultValue:
-        'https://backend-gezu.onrender.com', // Replace with your second API
-  );
-
-  // Add a selector to choose which API to use
-  bool _useSecondAPI = false;
-
-  String get apiBase {
-    final base = _useSecondAPI ? base2 : base1;
-    final b = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
-    return '$b/api';
-  }
-
-  // Method to switch between APIs
-  void useSecondAPI(bool useSecond) {
-    _useSecondAPI = useSecond;
-  }
 
   String? _token;
   bool _inited = false;
+
+  String get apiBase {
+    var b = base;
+    // On Android emulator, localhost refers to the emulator. Use 10.0.2.2 to reach host.
+    if (!kIsWeb) {
+      try {
+        if (Platform.isAndroid) {
+          if (b.contains('127.0.0.1')) b = b.replaceAll('127.0.0.1', '10.0.2.2');
+          if (b.contains('localhost')) b = b.replaceAll('localhost', '10.0.2.2');
+        }
+      } catch (_) {
+        // Platform not available (some targets); ignore
+      }
+    }
+    return b.endsWith('/') ? b.substring(0, b.length - 1) : b;
+  }
 
   String? get token => _token;
   bool get isAuthed => (_token != null && _token!.isNotEmpty);
@@ -59,20 +60,17 @@ class AuthService {
     final p = path.startsWith('/') ? path : '/$path';
     final u = Uri.parse('$apiBase$p');
     if (query == null) return u;
-    return u.replace(
-      queryParameters: {
-        for (final e in query.entries)
-          if (e.value.isNotEmpty) e.key: e.value,
-      },
-    );
+    return u.replace(queryParameters: {
+      for (final e in query.entries)
+        if (e.value.isNotEmpty) e.key: e.value,
+    });
   }
 
   Map<String, String> headers({Map<String, String>? extra}) {
     return {
       'Accept': 'application/json',
       if (extra != null) ...extra,
-      if (_token != null && _token!.isNotEmpty)
-        'Authorization': 'Bearer $_token',
+      if (_token != null && _token!.isNotEmpty) 'Authorization': 'Bearer $_token',
     };
   }
 
@@ -80,17 +78,14 @@ class AuthService {
     await _saveToken(null);
   }
 
-  /// POST /api/auth/login { email, password } -> { access_token }
+  /// POST /login { email, password } -> { accessToken }
   Future<void> login(String email, String password) async {
-    final uri = apiUri('/auth/login');
+    final uri = apiUri('/login');
     final res = await http
         .post(
           uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: jsonEncode({'email': email.trim(), 'password': password}),
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          body: jsonEncode({'email': email.trim(), 'password': password.trim()}),
         )
         .timeout(const Duration(seconds: 12));
 
@@ -98,16 +93,16 @@ class AuthService {
       throw Exception('Login failed: ${res.statusCode} ${res.body}');
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
-    final tok = (data['access_token'] ?? data['accessToken'])?.toString();
+    final tok = (data['accessToken'] ?? data['access_token'])?.toString();
     if (tok == null || tok.isEmpty) {
       throw Exception('No access token');
     }
     await _saveToken(tok);
   }
 
-  /// GET /api/auth/me (verifies token and returns claims)
+  /// GET /users/myprofile (verifies token and returns profile)
   Future<Map<String, dynamic>> me() async {
-    final uri = apiUri('/auth/me');
+    final uri = apiUri('/users/myprofile');
     final res = await http
         .get(uri, headers: headers())
         .timeout(const Duration(seconds: 12));
