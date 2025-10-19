@@ -2,28 +2,9 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
-import '../services/database_service.dart'; // ใช้ wrapper ทั้งหมด
+import '../services/database_service.dart';
+import '../models/filter_models.dart';
 
-/* ─────────── Models ─────────── */
-class OptionItem {
-  final String id;    // org_path หรือ category _id
-  final String label; // display name
-  const OptionItem(this.id, this.label);
-}
-
-class FilterData {
-  final List<OptionItem> faculties;
-  final List<OptionItem> clubs;
-  final List<OptionItem> categories;
-  final Map<String, List<OptionItem>> departmentsByFaculty;
-
-  const FilterData({
-    required this.faculties,
-    required this.clubs,
-    required this.categories,
-    required this.departmentsByFaculty,
-  });
-}
 
 class FilterSheetResult {
   final Set<String> facultyIds;
@@ -595,7 +576,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
       pills.add(_smallRemovablePill(label, onRemove: () {
         setState(() {
           _facultySel.removeWhere((x) => _normPath(x) == id);
-          // ✅ เคลียร์ภาคใต้คณะ (กันค้าง)
+          //  เคลียร์ภาคใต้คณะ (กันค้าง)
           final allDepts = (data.departmentsByFaculty[id] ?? const <OptionItem>[])
               .map((e) => _normPath(e.id));
           _deptSel.removeWhere((x) => allDepts.contains(_normPath(x)));

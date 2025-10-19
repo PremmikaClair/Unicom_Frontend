@@ -1,5 +1,4 @@
 // lib/models/comment.dart
-
 class Comment {
   final String id;
   final String postId;
@@ -8,6 +7,7 @@ class Comment {
   final DateTime createdAt;
   final DateTime updatedAt;
   final int likeCount;
+  final bool isLiked; // <- non-null, default false
 
   const Comment({
     required this.id,
@@ -17,6 +17,7 @@ class Comment {
     required this.createdAt,
     required this.updatedAt,
     required this.likeCount,
+    this.isLiked = false,
   });
 
   static String _s(dynamic v) => v?.toString() ?? '';
@@ -31,8 +32,16 @@ class Comment {
     final s = v.toString();
     return DateTime.tryParse(s) ?? DateTime.now();
   }
+  static bool? _b(dynamic v) {
+    if (v is bool) return v;
+    if (v is String) return v.toLowerCase() == 'true';
+    if (v is num) return v != 0;
+    return null;
+  }
 
-  factory Comment.fromJson(Map<String, dynamic> j) {
+  // เพิ่ม defaultIsLiked สำหรับ fallback จากระดับ response
+  factory Comment.fromJson(Map<String, dynamic> j, {bool defaultIsLiked = false}) {
+    final likedItem = _b(j['isLiked'] ?? j['liked']);
     return Comment(
       id: _s(j['id'] ?? j['_id']),
       postId: _s(j['postId'] ?? j['post_id']),
@@ -41,7 +50,7 @@ class Comment {
       createdAt: _t(j['createdAt'] ?? j['created_at']),
       updatedAt: _t(j['updatedAt'] ?? j['updated_at']),
       likeCount: _i(j['likeCount'] ?? j['like_count']),
+      isLiked: likedItem ?? defaultIsLiked, // <- ใช้ fallback
     );
   }
 }
-
