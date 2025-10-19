@@ -190,12 +190,13 @@ useEffect(() => {
 
   // ----- Delete
   const onDelete = async (u: User) => {
+    console.log(`on delete click: ${u.email}`)
     if (!confirm(`Delete ${u.email}?`)) return;
     try {
-      if (typeof u.id !== "number") {
-        throw new Error("User missing numeric id");
-      }
-      await deleteUser(u.id);
+      // if (typeof u._id !== "number") {
+      //   throw new Error("User missing numeric id");
+      // }
+      await deleteUser(u._id);
       setUsers((prev) => prev.filter((x) => getKey(x) !== getKey(u)));
     } catch (e: any) {
       console.error(e);
