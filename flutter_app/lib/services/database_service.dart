@@ -10,6 +10,7 @@ import '../models/comment.dart';
 import '../models/event.dart';
 import '../models/user.dart';
 import '../models/trend.dart';
+import '../models/categories.dart';
 
 class DatabaseService {
   final String baseUrl;
@@ -202,22 +203,34 @@ class DatabaseService {
     int limit = 20,
     String? cursor,
   }) async {
-    final uri = _buildUri('/posts/$postId/comments', {
+    final params = <String, String>{
       'limit': '$limit',
-      'cursor': cursor,
-    });
+      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+    };
+
+    final uri = _buildUri('/posts/$postId/comments', params);
     final res = await _get(uri, extra: const {'Accept': 'application/json'});
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
     }
+
     final map = jsonDecode(res.body) as Map<String, dynamic>;
-    final list = (map['comments'] ?? map['items'] ?? map['data']) as List<dynamic>;
-    final items = list
+
+    final rawList = (map['comments'] ?? map['items'] ?? map['data']) as List<dynamic>? ?? const [];
+
+    // อ่าน flag ระดับ response
+    final responseIsLiked = (map['isLiked'] == true);
+
+    final items = rawList
         .whereType<Map<String, dynamic>>()
-        .map((j) => Comment.fromJson(j))
+        .map((j) => Comment.fromJson(j, defaultIsLiked: responseIsLiked)) // <- ส่ง fallback
         .toList();
+
     final next = (map['next_cursor'] ?? map['NextCursor'] ?? map['nextCursor'])?.toString();
-    return PagedResult(items: items, nextCursor: next);
+    final hasMore = (map['has_more'] == true) || ((next ?? '').isNotEmpty);
+
+    return PagedResult<Comment>(items: items, nextCursor: next);
+
   }
 
   // POST /posts/:postId/comments { text }
@@ -1103,8 +1116,7 @@ class DatabaseService {
   }
 
   // ---------- Categories ----------
-  //=GET /categories?search=&limit=
-
+  // GET /categories?search=&limit=
   Future<List<Map<String, dynamic>>> getCategoriesFiber({
     String? search,
     int? limit,
@@ -1114,32 +1126,65 @@ class DatabaseService {
     if (limit != null && limit > 0) qp['limit'] = '$limit';
 
     final uri = _buildUri('/categories', qp);
-
     final res = await _get(uri, extra: const {'Accept': 'application/json'});
+
+    // Handle empty bodies gracefully
+    if (res.statusCode == 204 || (res.statusCode == 200 && res.body.trim().isEmpty)) {
+      return const <Map<String, dynamic>>[];
+    }
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
     }
 
-    final parsed = jsonDecode(res.body);
+    dynamic parsed;
+    try {
+      parsed = jsonDecode(res.body);
+    } catch (_) {
+      return const <Map<String, dynamic>>[];
+    }
 
+    // Extract list regardless of wrapper shape
+    final List<dynamic> rawList;
     if (parsed is List) {
-      return parsed
-          .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+      rawList = parsed;
+    } else if (parsed is Map<String, dynamic>) {
+      rawList = (parsed['items'] ?? parsed['data'] ?? parsed['categories'] ?? const []) as List<dynamic>;
+    } else {
+      return const <Map<String, dynamic>>[];
     }
 
-    if (parsed is Map<String, dynamic>) {
-      final list = (parsed['items'] ??
-                    parsed['data'] ??
-                    parsed['categories'] ??
-                    const []) as List<dynamic>;
-      return list
-          .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+    String _str(dynamic v) => v == null ? '' : v.toString();
+
+    // Normalize to only the category shape required by the app:
+    // { _id: string, category_name: string, short_name: string }
+    final out = <Map<String, dynamic>>[];
+    for (final e in rawList) {
+      if (e is! Map) continue;
+      final m = Map<String, dynamic>.from(e as Map);
+
+      String id = _str(m['_id']).trim();
+      // Accept Mongo style {"_id": {"$oid": "..."}}
+      if (id.isEmpty && m['_id'] is Map && (m['_id']['\$oid'] != null)) {
+        id = _str(m['_id']['\$oid']).trim();
+      }
+      final name = _str(m['category_name']).trim();
+      final short = _str(m['short_name']).trim();
+      if (id.isEmpty || name.isEmpty) continue;
+      out.add({'_id': id, 'category_name': name, 'short_name': short});
     }
 
-    return const <Map<String, dynamic>>[];
+    // Sort ascending by category_name
+    out.sort((a, b) => _str(a['category_name']).toLowerCase().compareTo(_str(b['category_name']).toLowerCase()));
+
+    return out;
   }
 
+  Future<List<Category>> getCategoriesFiberAsModel({
+    String? search,
+    int? limit,
+  }) async {
+    final raw = await getCategoriesFiber(search: search, limit: limit);
+    return raw.map(Category.fromMap).toList();
 
+  }
 }

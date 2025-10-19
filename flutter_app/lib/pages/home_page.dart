@@ -14,8 +14,8 @@ import 'explore/hashtag_feed_page.dart';
 
 import '../components/filter_pill.dart';
 import '../components/filter_sheet.dart';
+import '../models/categories.dart';
 
-// 🔹 Controller ใหม่สำหรับจัดการ Like
 import '../controllers/like_controller.dart';
 
 class HomePage extends StatefulWidget {

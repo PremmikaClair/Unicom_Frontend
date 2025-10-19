@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../components/app_colors.dart';
 import '../../models/event.dart';
 import '../../components/filter_sheet.dart';
+import '../../models/categories.dart';
 import 'event_details_page.dart';
 import 'create_event_page.dart';
 import 'request_page.dart';

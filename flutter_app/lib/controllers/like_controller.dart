@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../services/database_service.dart';
 
+import 'package:flutter_app/services/database_service.dart';
+import 'package:flutter_app/models/comment.dart';
+
 /// Controller สำหรับจัดการสถานะ/การกระทำที่เกี่ยวกับ 'ไลก์' ในฟีด
 /// - เก็บ state: likedIds, likeCounts, commentCounts, cooldowns
 /// - มี method: seedFromPosts, ensureLikeState, toggleLike, applyFromDetail
@@ -188,5 +191,68 @@ class FeedLikeController {
       if (commentCount != null) _commentCounts[postId] = commentCount;
       _checkedLikeIds.remove(postId);
     });
+  }
+}
+
+class CommentLikeController {
+  final DatabaseService db;
+  final void Function(void Function()) setState;
+  final void Function(String) showSnack;
+
+  final Map<String, bool> _liked = {};
+  final Map<String, int> _count = {};
+  final Set<String> _inflight = {};
+
+  CommentLikeController({
+    required this.db,
+    required this.setState,
+    required this.showSnack,
+  });
+
+  // Seed จากรายการคอมเมนต์ที่เพิ่งโหลด
+  void seedFromComments(List<Comment> list) {
+    for (final c in list) {
+      if (c.id.isEmpty) continue;
+      _liked[c.id] = c.isLiked;
+      _count[c.id] = c.likeCount;
+    }
+  }
+
+  bool isLikedById(String? id) => (id != null) && (_liked[id] ?? false);
+  int likeCountOfId(String? id) => id == null ? 0 : (_count[id] ?? 0);
+
+  Future<void> toggle(String id) async {
+    if (_inflight.contains(id)) return;
+    _inflight.add(id);
+
+    final prevLiked = _liked[id] ?? false;
+    final prevCount = _count[id] ?? 0;
+
+    // optimistic
+    setState(() {
+      final nowLiked = !prevLiked;
+      _liked[id] = nowLiked;
+      _count[id] = (nowLiked ? prevCount + 1 : prevCount - 1);
+      if (_count[id]! < 0) _count[id] = 0;
+    });
+
+    try {
+      final r = await db.toggleLike(targetId: id, targetType: 'comment');
+
+      // reconcile
+      setState(() {
+        _liked[id] = r.liked;
+        _count[id] = r.likeCount < 0 ? 0 : r.likeCount;
+      });
+    } catch (_) {
+      // rollback
+      setState(() {
+        _liked[id] = prevLiked;
+        _count[id] = prevCount;
+      });
+      showSnack('กดไลค์คอมเมนต์ไม่สำเร็จ');
+    } finally {
+      _inflight.remove(id);
+    }
   }
 }
