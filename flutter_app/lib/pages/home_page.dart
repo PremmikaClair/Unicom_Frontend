@@ -1,5 +1,4 @@
 // lib/pages/home_page.dart
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../components/app_colors.dart';
@@ -16,6 +15,9 @@ import 'explore/hashtag_feed_page.dart';
 import '../components/filter_pill.dart';
 import '../components/filter_sheet.dart';
 
+// 🔹 Controller ใหม่สำหรับจัดการ Like
+import '../controllers/like_controller.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -26,6 +28,9 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   // Service
   late final DatabaseService _db = DatabaseService();
+
+  // Like controller
+  late final FeedLikeController _likes;
 
   // Active Filter
   FilterSheetResult? _activeFilter;
@@ -57,25 +62,6 @@ class _HomePageState extends State<HomePage> {
   late final PageController _evCtrl = PageController(viewportFraction: 0.86);
   int _evIndex = 0;
 
-  // Like/Comment (optimistic)
-  final Set<String> _likedIds = {};
-  final Map<String, int> _likeCounts = {};
-  final Map<String, int> _commentCounts = {};
-  final Set<String> _liking = {};              // prevent overlapping requests
-  final Set<String> _checkedLikeIds = {};      // prevent duplicate ensure per render
-  final Map<String, int> _rev = {};            // local version per post
-  final Map<String, DateTime> _lastEnsuredAt = {}; // ensure cooldown per post
-  final Map<String, DateTime> _lastMutatedAt = {}; // ✅ last time user toggled like
-
-  int _likeCountOf(Post p) => _likeCounts[p.id] ?? p.likeCount;
-  int _commentCountOf(Post p) => _commentCounts[p.id] ?? p.comment;
-
-
-  bool _isVideoPost(Post p) =>
-    (p.video != null && p.video!.trim().isNotEmpty) ||
-    (p.videos.isNotEmpty);
-
-
   bool get _hasAnyFilter {
     final f = _activeFilter;
     if (f == null) return false;
@@ -88,6 +74,13 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
+    _likes = FeedLikeController(
+      db: _db,
+      setState: setState,
+      showSnack: _showSnack,
+    );
+
     _loadFirstPage();
     _loadIncomingEvents();
     _loadMyName();
@@ -119,13 +112,10 @@ class _HomePageState extends State<HomePage> {
         _posts = page.items;
         _nextCursor = page.nextCursor;
         _loading = false;
-        _checkedLikeIds.clear();
-        for (final p in _posts) {
-          _likeCounts[p.id] = p.likeCount;
-          _commentCounts[p.id] = p.comment;
-          if (p.isLiked) _likedIds.add(p.id);
-        }
       });
+
+      // seed like state ให้ controller
+      _likes.seedFromPosts(_posts);
 
       _enrichUserNamesFor(_posts);
     } catch (e) {
@@ -158,13 +148,10 @@ class _HomePageState extends State<HomePage> {
         _posts = page.items;
         _nextCursor = page.nextCursor;
         _loading = false;
-        _checkedLikeIds.clear();
-        for (final p in _posts) {
-          _likeCounts[p.id] = p.likeCount;
-          _commentCounts[p.id] = p.comment;
-          if (p.isLiked) _likedIds.add(p.id);
-        }
       });
+
+      // seed like state ให้ controller
+      _likes.seedFromPosts(_posts);
 
       _enrichUserNamesFor(_posts);
     } catch (e) {
@@ -240,13 +227,10 @@ class _HomePageState extends State<HomePage> {
         _posts.addAll(page.items);
         _nextCursor = page.nextCursor;
         _fetchingMore = false;
-        for (final p in page.items) {
-          _likeCounts[p.id] = p.likeCount;
-          _commentCounts[p.id] = p.comment;
-          if (p.isLiked) _likedIds.add(p.id);
-          _checkedLikeIds.remove(p.id);
-        }
       });
+
+      // seed เฉพาะโพสต์ที่โหลดเพิ่ม
+      _likes.seedFromPosts(page.items);
 
       _enrichUserNamesFor(page.items);
     } catch (e) {
@@ -346,178 +330,6 @@ class _HomePageState extends State<HomePage> {
         );
       }).toList();
     });
-  }
-
-  // ---------- Like sync (lazy) ----------
-  Future<void> _ensureLikeState(Post p) async {
-    if (_liking.contains(p.id)) return;
-    if (_checkedLikeIds.contains(p.id)) return;
-
-    // Cooldown 600ms
-    final now = DateTime.now();
-    final last = _lastEnsuredAt[p.id];
-    if (last != null && now.difference(last).inMilliseconds < 600) return;
-    _lastEnsuredAt[p.id] = now;
-
-    // Guard against recent local mutate (ยืดสำหรับวิดีโอ)
-    final lastMut = _lastMutatedAt[p.id];
-    final mutateCooldownMs = _isVideoPost(p) ? 1800 : 1000;
-    if (lastMut != null && now.difference(lastMut).inMilliseconds < mutateCooldownMs) {
-      return;
-    }
-
-    _checkedLikeIds.add(p.id);
-    try {
-      final fresh = await _db.getPostByIdFiber(p.id);
-      if (!mounted) return;
-
-      final prevLikes = _likeCounts[p.id] ?? p.likeCount;
-      // accept 0; only guard negative
-      final safeLikes = (fresh.likeCount < 0) ? prevLikes : fresh.likeCount;
-
-      final prevComments = _commentCounts[p.id] ?? p.comment;
-      // accept 0; only guard negative
-      final safeComments = (fresh.comment < 0) ? prevComments : fresh.comment;
-
-      // ✅ เฉพาะโพสต์วิดีโอ: กันเลข 0/1 น่าสงสัยระหว่างช่วงคูลดาวน์
-      if (_isVideoPost(p)) {
-        // ตัวอย่างเคสที่ไม่อยากให้ทับ:
-        // - เดิม >=2 → เพิ่ง unlike เป็น 1 แล้ว server ดันส่ง 0
-        final looksLikeBadZero = (prevLikes >= 1 && safeLikes == 0);
-        // - เพิ่ง like จนควร >=2 แต่ server ยังส่ง 1 มา (stale)
-        final looksLikeStaleOneWhenShouldBeTwo =
-            (_likedIds.contains(p.id) && prevLikes >= 2 && safeLikes == 1);
-
-        if (looksLikeBadZero || looksLikeStaleOneWhenShouldBeTwo) {
-          return; // ไม่เขียนทับ UI
-        }
-      }
-
-      setState(() {
-        if (fresh.isLiked) {
-          _likedIds.add(p.id);
-        } else {
-          _likedIds.remove(p.id);
-        }
-        _likeCounts[p.id] = safeLikes;
-        _commentCounts[p.id] = safeComments;
-      });
-    } catch (_) {
-      _checkedLikeIds.remove(p.id);
-    }
-  }
-
-
-  // ---------- Like/Comment actions ----------
-  void _toggleLike(Post p) async {
-    if (_liking.contains(p.id)) return;
-    _liking.add(p.id);
-
-    final curRev = (_rev[p.id] ?? 0) + 1;
-    _rev[p.id] = curRev;
-
-    final wasLiked = _likedIds.contains(p.id);
-    final base = _likeCounts[p.id] ?? p.likeCount;
-    final prevCount = (base <= 0 && p.likeCount > 0) ? p.likeCount : base;
-
-    // Optimistic update + remember last mutate time
-    setState(() {
-      if (wasLiked) {
-        _likedIds.remove(p.id);
-        _likeCounts[p.id] = math.max(0, prevCount - 1);
-      } else {
-        _likedIds.add(p.id);
-        _likeCounts[p.id] = prevCount + 1;
-      }
-      _lastMutatedAt[p.id] = DateTime.now(); // ✅ mark local mutate
-    });
-
-    try {
-      final r = await _db.toggleLike(targetId: p.id, targetType: 'post');
-
-      // Ignore r.likeCount (may be delta 0/1), compute our own
-      final reconciled = wasLiked ? math.max(0, prevCount - 1) : prevCount + 1;
-
-      if ((_rev[p.id] ?? 0) == curRev) {
-        setState(() {
-          // Use only r.liked to confirm heart state
-          if (r.liked) {
-            _likedIds.add(p.id);
-          } else {
-            _likedIds.remove(p.id);
-          }
-          _likeCounts[p.id] = reconciled;
-          _lastMutatedAt[p.id] = DateTime.now(); // ✅ reinforce last mutate
-        });
-
-        // Delay before allowing lazy refresh to override to avoid flicker
-        Future.delayed(const Duration(milliseconds: 1200), () {
-          if (!mounted) return;
-          _checkedLikeIds.remove(p.id);
-        });
-      }
-    } catch (_) {
-      if ((_rev[p.id] ?? 0) == curRev) {
-        setState(() {
-          if (wasLiked) {
-            _likedIds.add(p.id);
-            _likeCounts[p.id] = prevCount;
-          } else {
-            _likedIds.remove(p.id);
-            _likeCounts[p.id] = prevCount;
-          }
-          _lastMutatedAt[p.id] = DateTime.now(); // rollback also mutates UI
-        });
-        _showSnack('Failed to update like');
-      }
-    } finally {
-      _liking.remove(p.id);
-    }
-  }
-
-  // Navigate to comments / detail
-  Future<void> _openComments(Post p) async {
-    final synced = Post(
-      id: p.id,
-      userId: p.userId,
-      profilePic: p.profilePic,
-      username: p.username,
-      category: p.category,
-      message: p.message,
-      likeCount: _likeCounts[p.id] ?? p.likeCount,
-      comment: _commentCounts[p.id] ?? p.comment,
-      isLiked: _likedIds.contains(p.id),
-      authorRoles: p.authorRoles,
-      visibilityRoles: p.visibilityRoles,
-      timeStamp: p.timeStamp,
-      picture: p.picture,
-      video: p.video,
-      images: p.images,
-      videos: p.videos,
-    );
-
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => PostPage(post: synced)),
-    );
-
-    if (!mounted || result == null) return;
-    try {
-      final m = result as Map<String, dynamic>;
-      if ((m['postId'] ?? '') == p.id) {
-        setState(() {
-          final liked = (m['liked'] == true);
-          final likeCount = (m['likeCount'] as int?) ?? (_likeCounts[p.id] ?? p.likeCount);
-          final commentCount = (m['commentCount'] as int?) ?? (_commentCounts[p.id] ?? p.comment);
-
-          if (liked) _likedIds.add(p.id); else _likedIds.remove(p.id);
-          _likeCounts[p.id] = likeCount;
-          _commentCounts[p.id] = commentCount;
-
-          _checkedLikeIds.remove(p.id);
-        });
-      }
-    } catch (_) {}
   }
 
   // ---------- UI ----------
@@ -733,6 +545,46 @@ class _HomePageState extends State<HomePage> {
     return '$d - $d2';
   }
 
+  // Navigate to comments / detail
+  Future<void> _openComments(Post p) async {
+    final synced = Post(
+      id: p.id,
+      userId: p.userId,
+      profilePic: p.profilePic,
+      username: p.username,
+      category: p.category,
+      message: p.message,
+      likeCount: _likes.likeCountOf(p),
+      comment: _likes.commentCountOf(p),
+      isLiked: _likes.isLiked(p),
+      authorRoles: p.authorRoles,
+      visibilityRoles: p.visibilityRoles,
+      timeStamp: p.timeStamp,
+      picture: p.picture,
+      video: p.video,
+      images: p.images,
+      videos: p.videos,
+    );
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostPage(post: synced)),
+    );
+
+    if (!mounted || result == null) return;
+    try {
+      final m = result as Map<String, dynamic>;
+      if ((m['postId'] ?? '') == p.id) {
+        _likes.applyFromDetail(
+          postId: p.id,
+          liked: (m['liked'] == true),
+          likeCount: m['likeCount'] as int?,
+          commentCount: m['commentCount'] as int?,
+        );
+      }
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final header = Column(
@@ -826,19 +678,19 @@ class _HomePageState extends State<HomePage> {
           }
 
           final p = _posts[i];
-          final liked = _likedIds.contains(p.id);
-          final likes = _likeCounts[p.id] ?? p.likeCount;
-          final comments = _commentCounts[p.id] ?? p.comment;
+          final liked = _likes.isLiked(p);
+          final likes = _likes.likeCountOf(p);
+          final comments = _likes.commentCountOf(p);
 
-          // Lazy sync (has cooldown + anti-revert)
-          WidgetsBinding.instance.addPostFrameCallback((_) => _ensureLikeState(p));
+          // Lazy sync (มี cooldown + anti-revert ใน controller)
+          WidgetsBinding.instance.addPostFrameCallback((_) => _likes.ensureLikeState(p));
 
           return PostCard(
             post: p,
             isLiked: liked,
             likeCount: likes,
             commentCount: comments,
-            onToggleLike: () => _toggleLike(p),
+            onToggleLike: () => _likes.toggleLike(p),
             onCommentTap: () => _openComments(p),
             onCardTap: () => _openComments(p),
             onHashtagTap: (tag) {
