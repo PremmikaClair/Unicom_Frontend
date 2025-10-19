@@ -173,6 +173,7 @@ useEffect(() => {
       const firstName = prompt("First name?") || "";
       const lastName = prompt("Last name?") || "";
       const student_id = prompt("Student ID?") || "";
+      
       const created = await createUser({
         id,
         email,
@@ -281,7 +282,7 @@ useEffect(() => {
                     <td colSpan={5} className="p-3 bg-gray-50">
                       {!editing ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div><strong>ID:</strong> {user.id ?? user._id}</div>
+                          <div><strong>ID:</strong> {user._id ?? user.id}</div>
                           <div><strong>Email:</strong> {user.email}</div>
                           <div><strong>Name:</strong> {user.firstName} {user.lastName}</div>
                           <div><strong>Student ID:</strong> {user.student_id ?? "-"}</div>

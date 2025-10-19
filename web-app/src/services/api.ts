@@ -458,6 +458,7 @@ export async function updateComment(commentId: string, text: string) {
 }
 
 export async function deleteComment(commentId: string) {
+  console.log(`Delete comment : ${commentId}`)
   await apiFetch<void>(`/comments/${commentId}`, { method: "DELETE" });
 }
 
