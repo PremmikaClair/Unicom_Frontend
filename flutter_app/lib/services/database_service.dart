@@ -10,7 +10,6 @@ import '../models/comment.dart';
 import '../models/event.dart';
 import '../models/user.dart';
 import '../models/trend.dart';
-import '../models/categories.dart';
 
 class DatabaseService {
   final String baseUrl;
@@ -71,10 +70,15 @@ class DatabaseService {
     String? cursor,
   }) async {
     // Map to /posts (filters not supported server-side; keep client-only)
-    final uri = _buildUri('/posts', {
+    final params = <String, String?>{
       'limit': '$limit',
       'cursor': cursor,
-    });
+    };
+    final query = q?.trim();
+    if (query != null && query.isNotEmpty) {
+      params['q'] = query;
+    }
+    final uri = _buildUri('/posts', params);
     final res = await _get(uri, extra: const {'Accept': 'application/json'});
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
@@ -86,83 +90,137 @@ class DatabaseService {
     return PagedResult(items: items, nextCursor: next);
   }
 
-  // ---------- Feed with server-side filters (/posts/feed) ----------
-  // GET /posts/feed?limit=&cursor=&sort=&category=&role=
   Future<PagedResult<Post>> getFeed({
+    String? q,
     List<String>? categories,
     List<String>? roles,
-    String sort = 'time', // 'time' | 'popular'
+    String sort = 'time',
     int limit = 20,
     String? cursor,
   }) async {
-    // CSV ที่ backend ต้องการ
-    final catCsv = (categories == null || categories.isEmpty) ? null : categories.join(',');
-    final roleCsv = (roles == null || roles.isEmpty) ? null : roles.join(',');
-
-    final uri = _buildUri('/posts/feed', {
+    final params = <String, String?>{
       'limit': '$limit',
-      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
-      if (sort.isNotEmpty) 'sort': sort,
-      if (catCsv != null) 'category': catCsv,
-      if (roleCsv != null) 'role': roleCsv,
-    });
+      'cursor': cursor,
+    };
 
-    // ignore: avoid_print
-    print('[getFeed] GET $uri');
+    final query = q?.trim();
+    if (query != null && query.isNotEmpty) {
+      params['q'] = query;
+    }
 
+    final sortValue = sort.trim();
+    if (sortValue.isNotEmpty) {
+      params['sort'] = sortValue;
+    }
+
+    if (categories != null && categories.isNotEmpty) {
+      params['categoryIds'] = categories.join(',');
+      for (var i = 0; i < categories.length; i++) {
+        final value = categories[i];
+        if (value.isNotEmpty) {
+          params['categoryIds[$i]'] = value;
+        }
+      }
+    }
+
+    if (roles != null && roles.isNotEmpty) {
+      params['roles'] = roles.join(',');
+      for (var i = 0; i < roles.length; i++) {
+        final value = roles[i];
+        if (value.isNotEmpty) {
+          params['roles[$i]'] = value;
+        }
+      }
+    }
+
+    final uri = _buildUri('/feed', params);
     final res = await _get(uri, extra: const {'Accept': 'application/json'});
-
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
     }
-
-    final map = jsonDecode(res.body) as Map<String, dynamic>;
-    final list = (map['items'] ?? map['Items'] ?? map['data']) as List<dynamic>? ?? const [];
+    final map = jsonDecode(res.body);
+    List<dynamic> list;
+    String? next;
+    if (map is Map<String, dynamic>) {
+      list = (map['items'] ?? map['data'] ?? map['posts']) as List<dynamic>? ?? const [];
+      next = (map['next_cursor'] ?? map['NextCursor'] ?? map['nextCursor'])?.toString();
+    } else if (map is List) {
+      list = map;
+      next = null;
+    } else {
+      list = const [];
+      next = null;
+    }
     final items = list
         .whereType<Map<String, dynamic>>()
-        .map((j) => Post.fromJson(j))
+        .map((e) => Post.fromJson(e))
         .toList();
-    final next = (map['next_cursor'] ?? map['NextCursor'] ?? map['nextCursor'])?.toString();
-
     return PagedResult(items: items, nextCursor: next);
   }
 
-  //http://127.0.0.1:8000/posts/post_id
-  //ได้โพสต์ที่มี is_liked
-  Future<Post> getPostByIdFiber(String id) async {
-    final uri = _buildUri('/posts/${Uri.encodeComponent(id)}', {});
+  Future<Post> getPostByIdFiber(String postId) async {
+    final uri = _buildUri('/posts/$postId', const {});
     final res = await _get(uri, extra: const {'Accept': 'application/json'});
-
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
     }
-
     final body = res.body.trim();
     if (body.isEmpty) {
-      throw const HttpException('Empty response for GET /posts/:id');
+      throw StateError('Empty response when loading post $postId');
     }
-
     final decoded = jsonDecode(body);
-
-    // รองรับหลายรูปแบบตอบกลับ:
-    // 1) map ตรงๆของโพสต์
-    // 2) ห่อใน key เช่น { "post": {...} } หรือ { "data": {...} }
-    Map<String, dynamic> jsonMap;
+    Map<String, dynamic>? map;
     if (decoded is Map<String, dynamic>) {
-      if (decoded['post'] is Map<String, dynamic>) {
-        jsonMap = decoded['post'] as Map<String, dynamic>;
-      } else if (decoded['data'] is Map<String, dynamic>) {
-        jsonMap = decoded['data'] as Map<String, dynamic>;
-      } else {
-        jsonMap = decoded;
+      final candidates = [
+        decoded['item'],
+        decoded['post'],
+        decoded['data'],
+        decoded['Post'],
+      ];
+      for (final candidate in candidates) {
+        if (candidate is Map<String, dynamic>) {
+          map = Map<String, dynamic>.from(candidate);
+          break;
+        }
       }
-    } else {
-      throw const HttpException('Unexpected response shape for /posts/:id');
+      map ??= Map<String, dynamic>.from(decoded);
+    } else if (decoded is List) {
+      for (final entry in decoded) {
+        if (entry is Map<String, dynamic>) {
+          map = Map<String, dynamic>.from(entry);
+          break;
+        }
+      }
     }
+    if (map == null || map.isEmpty) {
+      throw StateError('Invalid post payload for $postId: $decoded');
+    }
+    return Post.fromJson(map);
+  }
 
-    // ปล่อยให้ Post.fromJson จัดการ mapping field ต่างๆ
-    // (เช่น postText -> message, commentCount -> comment, is_liked -> isLiked)
-    return Post.fromJson(jsonMap);
+  Future<PagedResult<Map<String, dynamic>>> searchUsers({
+    required String q,
+    int limit = 20,
+    String? cursor,
+  }) async {
+    final params = <String, String?>{
+      'q': q.trim(),
+      'limit': '$limit',
+      'cursor': cursor,
+    };
+    final uri = _buildUri('/users', params);
+    final res = await _get(uri, extra: const {'Accept': 'application/json'});
+    if (res.statusCode != 200) {
+      throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
+    }
+    final map = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = (map['items'] ?? map['data'] ?? map['Items'] ?? const []) as List<dynamic>;
+    final items = list
+        .whereType<Map<String, dynamic>>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    final next = (map['nextCursor'] ?? map['next_cursor'])?.toString();
+    return PagedResult(items: items, nextCursor: next);
   }
 
   // ---------- Likes ----------
@@ -203,34 +261,22 @@ class DatabaseService {
     int limit = 20,
     String? cursor,
   }) async {
-    final params = <String, String>{
+    final uri = _buildUri('/posts/$postId/comments', {
       'limit': '$limit',
-      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
-    };
-
-    final uri = _buildUri('/posts/$postId/comments', params);
+      'cursor': cursor,
+    });
     final res = await _get(uri, extra: const {'Accept': 'application/json'});
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
     }
-
     final map = jsonDecode(res.body) as Map<String, dynamic>;
-
-    final rawList = (map['comments'] ?? map['items'] ?? map['data']) as List<dynamic>? ?? const [];
-
-    // อ่าน flag ระดับ response
-    final responseIsLiked = (map['isLiked'] == true);
-
-    final items = rawList
+    final list = (map['comments'] ?? map['items'] ?? map['data']) as List<dynamic>;
+    final items = list
         .whereType<Map<String, dynamic>>()
-        .map((j) => Comment.fromJson(j, defaultIsLiked: responseIsLiked)) // <- ส่ง fallback
+        .map((j) => Comment.fromJson(j))
         .toList();
-
     final next = (map['next_cursor'] ?? map['NextCursor'] ?? map['nextCursor'])?.toString();
-    final hasMore = (map['has_more'] == true) || ((next ?? '').isNotEmpty);
-
-    return PagedResult<Comment>(items: items, nextCursor: next);
-
+    return PagedResult(items: items, nextCursor: next);
   }
 
   // POST /posts/:postId/comments { text }
@@ -303,8 +349,6 @@ class DatabaseService {
     final next = (map['nextCursor'] ?? map['next_cursor']) as String?;
     return PagedResult(items: items, nextCursor: next);
   }
-
-  
 
   // ---------- Trends (trending tags + posts) ----------
   // Integrates with backend endpoints:
@@ -560,31 +604,31 @@ class DatabaseService {
 
   // ---------- Categories ----------
   // GET /categories -> [ { _id, category_name, short_name } ]
-  // Future<List<Map<String, dynamic>>> getCategoriesFiber() async {
-  //   final uri = _buildUri('/categories', const {});
-  //   final res = await _get(uri, extra: const {'Accept': 'application/json'});
-  //   if (res.statusCode != 200) {
-  //     throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
-  //   }
-  //   final data = jsonDecode(res.body);
-  //   if (data is! List) return const <Map<String, dynamic>>[];
-  //   // Normalize ids to string and expose name/short
-  //   return data.map<Map<String, dynamic>>((e) {
-  //     final m = Map<String, dynamic>.from(e as Map);
-  //     String idStr;
-  //     final id = m['_id'];
-  //     if (id is Map && id['\$oid'] != null) {
-  //       idStr = id['\$oid'].toString();
-  //     } else {
-  //       idStr = id?.toString() ?? '';
-  //     }
-  //     return {
-  //       'id': idStr,
-  //       'name': (m['category_name'] ?? m['name'] ?? '').toString(),
-  //       'short': (m['short_name'] ?? m['short'] ?? '').toString(),
-  //     };
-  //   }).toList();
-  // }
+  Future<List<Map<String, dynamic>>> getCategoriesFiber() async {
+    final uri = _buildUri('/categories', const {});
+    final res = await _get(uri, extra: const {'Accept': 'application/json'});
+    if (res.statusCode != 200) {
+      throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
+    }
+    final data = jsonDecode(res.body);
+    if (data is! List) return const <Map<String, dynamic>>[];
+    // Normalize ids to string and expose name/short
+    return data.map<Map<String, dynamic>>((e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      String idStr;
+      final id = m['_id'];
+      if (id is Map && id['\$oid'] != null) {
+        idStr = id['\$oid'].toString();
+      } else {
+        idStr = id?.toString() ?? '';
+      }
+      return {
+        'id': idStr,
+        'name': (m['category_name'] ?? m['name'] ?? '').toString(),
+        'short': (m['short_name'] ?? m['short'] ?? '').toString(),
+      };
+    }).toList();
+  }
 
   // ---------- Posts (Fiber) ----------
   // POST /posts (CreatePostDTO)
@@ -1113,78 +1157,5 @@ class DatabaseService {
     final data = jsonDecode(res.body);
     if (data is! List) return const <Map<String, dynamic>>[];
     return data.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map)).toList();
-  }
-
-  // ---------- Categories ----------
-  // GET /categories?search=&limit=
-  Future<List<Map<String, dynamic>>> getCategoriesFiber({
-    String? search,
-    int? limit,
-  }) async {
-    final qp = <String, String>{};
-    if (search != null && search.isNotEmpty) qp['search'] = search;
-    if (limit != null && limit > 0) qp['limit'] = '$limit';
-
-    final uri = _buildUri('/categories', qp);
-    final res = await _get(uri, extra: const {'Accept': 'application/json'});
-
-    // Handle empty bodies gracefully
-    if (res.statusCode == 204 || (res.statusCode == 200 && res.body.trim().isEmpty)) {
-      return const <Map<String, dynamic>>[];
-    }
-    if (res.statusCode != 200) {
-      throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
-    }
-
-    dynamic parsed;
-    try {
-      parsed = jsonDecode(res.body);
-    } catch (_) {
-      return const <Map<String, dynamic>>[];
-    }
-
-    // Extract list regardless of wrapper shape
-    final List<dynamic> rawList;
-    if (parsed is List) {
-      rawList = parsed;
-    } else if (parsed is Map<String, dynamic>) {
-      rawList = (parsed['items'] ?? parsed['data'] ?? parsed['categories'] ?? const []) as List<dynamic>;
-    } else {
-      return const <Map<String, dynamic>>[];
-    }
-
-    String _str(dynamic v) => v == null ? '' : v.toString();
-
-    // Normalize to only the category shape required by the app:
-    // { _id: string, category_name: string, short_name: string }
-    final out = <Map<String, dynamic>>[];
-    for (final e in rawList) {
-      if (e is! Map) continue;
-      final m = Map<String, dynamic>.from(e as Map);
-
-      String id = _str(m['_id']).trim();
-      // Accept Mongo style {"_id": {"$oid": "..."}}
-      if (id.isEmpty && m['_id'] is Map && (m['_id']['\$oid'] != null)) {
-        id = _str(m['_id']['\$oid']).trim();
-      }
-      final name = _str(m['category_name']).trim();
-      final short = _str(m['short_name']).trim();
-      if (id.isEmpty || name.isEmpty) continue;
-      out.add({'_id': id, 'category_name': name, 'short_name': short});
-    }
-
-    // Sort ascending by category_name
-    out.sort((a, b) => _str(a['category_name']).toLowerCase().compareTo(_str(b['category_name']).toLowerCase()));
-
-    return out;
-  }
-
-  Future<List<Category>> getCategoriesFiberAsModel({
-    String? search,
-    int? limit,
-  }) async {
-    final raw = await getCategoriesFiber(search: search, limit: limit);
-    return raw.map(Category.fromMap).toList();
-
   }
 }
