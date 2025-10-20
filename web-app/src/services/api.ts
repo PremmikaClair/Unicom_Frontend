@@ -181,6 +181,7 @@ export async function updateUser(_id: string | number, _patch: Partial<User>) {
 export async function deleteUser(id: string | number) {
   // New backend expects ObjectID hex as :id; allow numeric by resolving first
   let target = String(id);
+  console.log(`delete user : ${id}`)
   const isHex = /^[a-fA-F0-9]{24}$/.test(target);
   if (!isHex) {
     const resp = await apiFetch<any>(`/users`).catch(() => ({ data: [] }));
@@ -457,6 +458,7 @@ export async function updateComment(commentId: string, text: string) {
 }
 
 export async function deleteComment(commentId: string) {
+  console.log(`Delete comment : ${commentId}`)
   await apiFetch<void>(`/comments/${commentId}`, { method: "DELETE" });
 }
 
@@ -676,6 +678,7 @@ export async function createEvent(body: {
 }
 
 export async function deleteEvent(id: string) {
+  console.log(`delete ${encodeURIComponent(id)}`)
   await apiFetch<void>(`/event/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 

@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { PostDoc, CommentDoc } from "../../types";
-import { listComments, createComment, deletePost } from "../../services/api";
+import { listComments, createComment, deletePost, deleteComment } from "../../services/api";
 
 type Props = {
   post: PostDoc;
   onStatusChange?: (id: string, status: "active" | "hidden") => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string) => void;  
 };
 
 function formatDT(s?: string) {
@@ -162,10 +162,25 @@ export default function PostCard({ post, onStatusChange, onDelete }: Props) {
 
   // Hide/Unhide actions removed per request
   async function onDeleteClick() {
-    if (!window.confirm("Delete this post? This cannot be undone.")) return;
-    try {
-      await deletePost(post._id);
-      onDelete?.(post._id);
+    if (!window.confirm(`confirm to delete? This cannot be undone.`)) return;
+    try {      
+        await deletePost(post._id);
+        onDelete?.(post._id);
+    } catch (e: any) {
+      setErr(e?.message || "Delete failed");
+    }
+  }
+
+    async function onDeleteClick_comment(commentId: string, text: string) {
+    if (!window.confirm(`confirm to delete? ${text}`)) return;
+    if(commentId == ""){
+      window.alert("Fetch commendID failed")
+      return;
+    }
+    try {      
+      await deleteComment(commentId)
+      setComments(prev => prev.filter(c => c.id !== commentId && c._id !== commentId));
+      setCommentCount(n => (typeof n === "number" ? Math.max(n - 1, 0) : 0));
     } catch (e: any) {
       setErr(e?.message || "Delete failed");
     }
@@ -176,7 +191,8 @@ export default function PostCard({ post, onStatusChange, onDelete }: Props) {
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, justifyContent: "space-between" }}>
         <div style={{ display: "grid", gap: 4 }}>
           <div style={{ fontWeight: 600 }}>{post.name || "—"}</div>
-          <div style={{ fontSize: 12, color: "#6b7280" }}>uid: {post.uid || "—"}</div>
+          {/* <div style={{ fontSize: 12, color: "#6b7280" }}>uid: {post.uid || "—"}</div> */}
+          <div style={{ fontSize: 12, color: "#6b7280" }}>post id: {post._id || "—"}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {post.posted_as?.label && <span style={tagPill}>{post.posted_as.label}</span>}
@@ -246,8 +262,8 @@ export default function PostCard({ post, onStatusChange, onDelete }: Props) {
             {loading && <div style={{ color: "#6b7280" }}>Loading…</div>}
             {comments.map(c => (
               <div key={c.id || c._id} style={{ padding: 10, background: "#fff", border: "1px solid #eee", borderRadius: 8 }}>
-                <div style={{ whiteSpace: "pre-wrap" }}>{c.text}</div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{formatDT(c.createdAt)}</div>
+                <div style={{ whiteSpace: "pre-wrap" }}>{c.text} <button onClick={()=> onDeleteClick_comment(c.id || "", c.text || "")}style={linkBtnDanger}>Delete</button></div>                      
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{formatDT(c.createdAt)}</div>              
               </div>
             ))}
             {nextCursor && (
