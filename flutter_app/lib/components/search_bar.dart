@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 // lib/components/search_bar.dart
 class SearchBarField extends StatelessWidget {
   final TextEditingController? controller;
-  final FocusNode? focusNode;
   final ValueChanged<String>? onSubmitted;
   final String hintText;
   final Color? fillColor;
@@ -14,7 +13,6 @@ class SearchBarField extends StatelessWidget {
   const SearchBarField({
     super.key,
     this.controller,
-    this.focusNode,
     this.onSubmitted,
     this.hintText = 'Search',
     this.fillColor,
@@ -28,7 +26,6 @@ class SearchBarField extends StatelessWidget {
 
     return TextField(
       controller: controller,
-      focusNode: focusNode,
       readOnly: readOnly,        // ⬅️
       onTap: onTap,              // ⬅️
       textInputAction: TextInputAction.search,

@@ -9,18 +9,7 @@ import '../../services/database_service.dart';
 import '../../models/user.dart' as model;
 
 class RolePage extends StatefulWidget {
-  final String? userId;
-  final String? initialName;
-  final String? initialEmail;
-
-  const RolePage({
-    super.key,
-    this.userId,
-    this.initialName,
-    this.initialEmail,
-  });
-
-  bool get isSelf => userId == null || userId!.trim().isEmpty;
+  const RolePage({super.key});
 
   static const _brandGreen = Color(0xFF556B2F);
   static const _mintBg = Color(0xFFE6F0E6);
@@ -66,8 +55,6 @@ class _RolePageState extends State<RolePage> {
   int _selectedIndex = -1; // not highlighting any tab
   final _db = DatabaseService();
 
-  bool get _viewingSelf => widget.isSelf;
-
   Future<void> _goBackToPrevious() async {
     FocusScope.of(context).unfocus();
     if (await Navigator.of(context).maybePop()) return;
@@ -104,79 +91,10 @@ class _RolePageState extends State<RolePage> {
   late final Future<RoleScreenData> _future = _load();
 
   Future<RoleScreenData> _load() async {
-    if (_viewingSelf) {
-      final meMap = await _db.getMeFiber();
-      final me = model.UserProfile.fromJson(meMap);
-      final mems = await _db.getMyMembershipsFiber(active: 'true');
-      return RoleScreenData(profile: me, memberships: mems);
-    }
-
-    final targetId = widget.userId!.trim();
-    final userMap = await _db.getUserByObjectIdFiber(targetId);
-    final profile = model.UserProfile.fromJson(userMap);
-    final memberships = _normalizeMembershipsFromProfile(userMap);
-    return RoleScreenData(profile: profile, memberships: memberships);
-  }
-
-  List<Map<String, dynamic>> _normalizeMembershipsFromProfile(Map<String, dynamic> profile) {
-    final raw = profile['memberships'];
-    if (raw is! List) return const <Map<String, dynamic>>[];
-    final output = <Map<String, dynamic>>[];
-    for (final item in raw) {
-      if (item is Map) {
-        final norm = _normalizeMembershipMap(Map<String, dynamic>.from(item));
-        if (norm != null) {
-          output.add(norm);
-        }
-      }
-    }
-    return output;
-  }
-
-  Map<String, dynamic>? _normalizeMembershipMap(Map<String, dynamic> m) {
-    final org = (m['org_unit'] ?? m['org']) as Map<String, dynamic>?;
-    final posMapRaw = m['position'];
-    Map<String, dynamic>? pos;
-    if (posMapRaw is Map) {
-      pos = posMapRaw.map((key, value) => MapEntry(key.toString(), value));
-    }
-    final orgPath = (org?['org_path'] ?? m['org_path'])?.toString();
-    String orgShort = (org?['shortname'] ?? org?['short_name'] ?? '')?.toString() ?? '';
-    final posKey = (pos?['key'] ?? m['position_key'] ?? m['position'])?.toString();
-    final posDisplay = (() {
-      final display = pos?['display'];
-      if (display is Map) {
-        final disp = display.map((key, value) => MapEntry(key.toString(), value));
-        final th = disp['th']?.toString();
-        final en = disp['en']?.toString();
-        if (th != null && th.trim().isNotEmpty) return th.trim();
-        if (en != null && en.trim().isNotEmpty) return en.trim();
-      }
-      final label = m['label']?.toString();
-      if (label != null && label.trim().isNotEmpty) return label.trim();
-      return posKey ?? '';
-    })();
-    if (orgShort.isEmpty && orgPath != null && orgPath.isNotEmpty) {
-      final parts = orgPath.split('/')..removeWhere((e) => e.isEmpty);
-      if (parts.isNotEmpty) orgShort = parts.last.toUpperCase();
-    }
-    final id = '${orgPath ?? ''}::${posKey ?? ''}';
-    final baseLabel = (posDisplay.isNotEmpty && orgShort.isNotEmpty)
-        ? '$posDisplay • $orgShort'
-        : (posDisplay.isNotEmpty ? posDisplay : '${posKey ?? ''} • ${orgPath ?? ''}');
-    final safeLabel = baseLabel.trim().isNotEmpty
-        ? baseLabel.trim()
-        : (posKey != null && posKey.trim().isNotEmpty
-            ? posKey.trim()
-            : 'member');
-    return {
-      '_id': id,
-      'org_path': orgPath ?? '',
-      'org_short': orgShort,
-      'position_key': posKey ?? '',
-      'label': safeLabel,
-      'active': (m['active'] ?? m['isActive'] ?? true) == true,
-    };
+    final meMap = await _db.getMeFiber();
+    final me = model.UserProfile.fromJson(meMap);
+    final mems = await _db.getMyMembershipsFiber(active: 'true');
+    return RoleScreenData(profile: me, memberships: mems);
   }
 
   @override
@@ -218,22 +136,6 @@ class _RolePageState extends State<RolePage> {
               final roles = data.memberships;
               bool hasClubs = roles.any((m) => (m['org_path']?.toString() ?? '').contains('/club'));
 
-              String resolvedName = ([profile.firstName ?? '', profile.lastName ?? '']
-                      .where((s) => s.trim().isNotEmpty)
-                      .join(' ')
-                      .trim());
-              if (resolvedName.isEmpty) {
-                resolvedName = widget.initialName?.trim() ?? '—';
-              }
-              String resolvedEmail = profile.email?.trim() ?? '';
-              if (resolvedEmail.isEmpty) {
-                final initialEmail = widget.initialEmail?.trim();
-                if (initialEmail != null && initialEmail.isNotEmpty) {
-                  resolvedEmail = initialEmail;
-                }
-              }
-              if (resolvedEmail.isEmpty) resolvedEmail = '—';
-
               return SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -245,15 +147,9 @@ class _RolePageState extends State<RolePage> {
                           icon: const Icon(Icons.arrow_back, color: Colors.black87),
                           onPressed: _goBackToPrevious,
                         ),
-                        Expanded(
+                        const Expanded(
                           child: Center(
-                            child: Text(
-                              widget.isSelf ? 'Personal Information' : 'Profile Information',
-                              style: _RoleTextStyles.header.copyWith(fontSize: 20),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              softWrap: false,
-                            ),
+                            child: Text('Personal Information', style: _RoleTextStyles.header),
                           ),
                         ),
                         const SizedBox(width: 48),
@@ -270,13 +166,16 @@ class _RolePageState extends State<RolePage> {
 
                     // Name & email
                     Text(
-                      resolvedName,
+                      [profile.firstName ?? '', profile.lastName ?? '']
+                          .where((s) => s.trim().isNotEmpty)
+                          .join(' ')
+                          .trim(),
                       textAlign: TextAlign.center,
                       style: _RoleTextStyles.name,
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      resolvedEmail,
+                      profile.email ?? '—',
                       textAlign: TextAlign.center,
                       style: _RoleTextStyles.email,
                     ),
@@ -294,10 +193,7 @@ class _RolePageState extends State<RolePage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Center(
-                            child: Text(
-                              widget.isSelf ? 'My role' : 'Roles',
-                              style: _RoleTextStyles.sectionTitle.copyWith(color: Colors.black),
-                            ),
+                            child: Text('My role', style: _RoleTextStyles.sectionTitle.copyWith(color: Colors.black)),
                           ),
                           const SizedBox(height: 8),
                           // Clubs entry
@@ -326,12 +222,8 @@ class _RolePageState extends State<RolePage> {
                           ...List.generate(roles.length, (i) {
                             final m = roles[i];
                             final pos = (m['position_key'] ?? '').toString();
-                            final label = (m['label'] ?? '').toString();
                             final path = (m['org_path'] ?? '').toString();
                             final active = m['active'] == true;
-                            final displayTitle = label.isNotEmpty
-                                ? label
-                                : (pos.isNotEmpty ? pos : 'member');
                             return Column(
                               children: [
                                 ListTile(
@@ -344,10 +236,10 @@ class _RolePageState extends State<RolePage> {
                                     color: active ? Colors.black : Colors.black45,
                                   ),
                                   title: Text(
-                                    displayTitle,
+                                    pos.isNotEmpty ? pos : 'member',
                                     style: _RoleTextStyles.listTitle,
                                   ),
-                                  subtitle: path.isNotEmpty ? Text(path) : null,
+                                  subtitle: Text(path),
                                 ),
                                 if (i != roles.length - 1) const Divider(height: 0),
                               ],

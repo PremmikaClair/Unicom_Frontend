@@ -9,7 +9,6 @@ import '../login/auth_gate.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
-import '../../shared/paging.dart';
 
 import '../../models/user.dart';
 import '../../models/post.dart' as models;
@@ -457,13 +456,13 @@ class _ProfilePageState extends State<ProfilePage> {
     String? username,
     String? email,
   }) {
-    final lowUid = uid.trim().toLowerCase();
+    final lowUid = uid.toLowerCase();
     final lowUser = username?.toLowerCase();
     final lowEmail = email?.toLowerCase();
 
     return raw.where((m) {
       final a = _authorTripletFromMap(m);
-      final byId = lowUid.isNotEmpty && (a.id?.toLowerCase() == lowUid);
+      final byId = (a.id?.toLowerCase() == lowUid);
       final byEmail = lowEmail != null && (a.email?.toLowerCase() == lowEmail);
       final byUsername = lowUser != null && (a.username?.toLowerCase() == lowUser);
       return byId || byEmail || byUsername;
@@ -518,40 +517,12 @@ class _ProfilePageState extends State<ProfilePage> {
     safeSetState(() { _loadingPosts = true; _postsError = null; _posts.clear(); });
 
     try {
-      String? _takeFirstNonEmpty(List<dynamic> candidates) {
-        for (final item in candidates) {
-          if (item == null) continue;
-          final text = item.toString().trim();
-          if (text.isNotEmpty) return text;
-        }
-        return null;
-      }
-
-      final email = _takeFirstNonEmpty([
-        u.email,
-        u.raw['email'],
-        u.raw['Email'],
-        u.raw['mail'],
-      ]);
-
-      final username = _takeFirstNonEmpty([
-        u.raw['username'],
-        u.raw['userName'],
-        u.raw['alias'],
-        u.raw['uid'],
-        widget.initialUsername,
-      ]);
-
       List<models.Post> list;
       if (_isMine) {
         list = await _fetchMyPostsFast();
       } else {
         final uid = (u.oid ?? u.id?.toString() ?? '').trim();
-        list = await _fetchPostsByUserFast(
-          uid,
-          email: email,
-          username: username,
-        );
+        list = await _fetchPostsByUserFast(uid);
       }
 
       if (!mounted) return;
@@ -671,92 +642,32 @@ class _ProfilePageState extends State<ProfilePage> {
       } catch (_) {}
     }
 
+    if (collected.isEmpty) return const <models.Post>[];
     final sorted = _sortNewestFirst(collected);
     return sorted.map((e) => models.Post.fromJson(e)).toList();
   }
 
-  Future<List<models.Post>> _fetchPostsByUserViaService({
-    String? userId,
-    String? username,
-  }) async {
-    final lowId = userId?.trim().toLowerCase();
-    final lowUsername = username?.trim().toLowerCase();
-    if ((lowId == null || lowId.isEmpty) && (lowUsername == null || lowUsername.isEmpty)) {
-      return const <models.Post>[];
-    }
-
-    final collected = <models.Post>[];
-    final seen = <String>{};
-    String? cursor;
-
-    for (var i = 0; i < _maxPages; i++) {
-      PagedResult<models.Post> page;
-      try {
-        page = await _db.getPosts(
-          limit: _pageLimit,
-          cursor: cursor,
-        );
-      } catch (_) {
-        break;
-      }
-      if (page.items.isEmpty) break;
-
-      for (final post in page.items) {
-        final postId = post.id;
-        final postUserId = post.userId.trim().toLowerCase();
-        final postUsername = post.username.trim().toLowerCase();
-        final matchById = lowId != null && lowId.isNotEmpty && postUserId == lowId;
-        final matchByUsername =
-            lowUsername != null && lowUsername.isNotEmpty && postUsername == lowUsername;
-        if (!matchById && !matchByUsername) continue;
-        if (seen.add(postId)) {
-          collected.add(post);
-          if (collected.length >= _hardCapItems) break;
-        }
-      }
-
-      if (collected.length >= _hardCapItems) break;
-      cursor = page.nextCursor;
-      if (cursor == null) break;
-    }
-
-    collected.sort((a, b) => b.timeStamp.compareTo(a.timeStamp));
-    return collected;
-  }
-
   // ====== ดึงโพสต์ของ user เป้าหมาย — FAST + FILTER ======
-  Future<List<models.Post>> _fetchPostsByUserFast(
-    String userId, {
-    String? email,
-    String? username,
-  }) async {
+  Future<List<models.Post>> _fetchPostsByUserFast(String userId) async {
     final uid = userId.trim();
-    final emailTrim = email?.trim();
-    final usernameTrim = username?.trim();
-    final hasIdentifiers = uid.isNotEmpty ||
-        (emailTrim != null && emailTrim.isNotEmpty) ||
-        (usernameTrim != null && usernameTrim.isNotEmpty);
-    if (!hasIdentifiers) return const <models.Post>[];
+    if (uid.isEmpty) return const <models.Post>[];
 
     final base = AuthService.I.apiBase.endsWith('/')
         ? AuthService.I.apiBase.substring(0, AuthService.I.apiBase.length - 1)
         : AuthService.I.apiBase;
 
-    final preferUser = <Uri>[];
-    if (uid.isNotEmpty) {
-      preferUser.addAll([
-        Uri.parse('$base/users/profile/${Uri.encodeComponent(uid)}/posts'),
-        Uri.parse('$base/users/${Uri.encodeComponent(uid)}/posts'),
-        Uri.parse('$base/posts/user/${Uri.encodeComponent(uid)}'),
-        Uri.parse('$base/posts?user=$uid'),
-        Uri.parse('$base/posts?user_id=$uid'),
-        Uri.parse('$base/posts?userId=$uid'),
-        Uri.parse('$base/posts?authorId=$uid'),
-        Uri.parse('$base/posts?author_id=$uid'),
-        Uri.parse('$base/posts?author=$uid'),
-        Uri.parse('$base/posts?who=$uid'),
-      ]);
-    }
+    final preferUser = <Uri>[
+      Uri.parse('$base/users/profile/${Uri.encodeComponent(uid)}/posts'),
+      Uri.parse('$base/users/${Uri.encodeComponent(uid)}/posts'),
+      Uri.parse('$base/posts/user/${Uri.encodeComponent(uid)}'),
+      Uri.parse('$base/posts?user=$uid'),
+      Uri.parse('$base/posts?user_id=$uid'),
+      Uri.parse('$base/posts?userId=$uid'),
+      Uri.parse('$base/posts?authorId=$uid'),
+      Uri.parse('$base/posts?author_id=$uid'),
+      Uri.parse('$base/posts?author=$uid'),
+      Uri.parse('$base/posts?who=$uid'),
+    ];
 
     final collected = <Map<String, dynamic>>[];
     final seen = <String>{};
@@ -774,12 +685,7 @@ class _ProfilePageState extends State<ProfilePage> {
           final raw = await _getPagedRaw(v, firstPageOnly: true);
           if (raw.isEmpty) continue;
 
-          final filtered = _filterToSpecificUser(
-            raw,
-            uid,
-            username: usernameTrim,
-            email: emailTrim,
-          );
+          final filtered = _filterToSpecificUser(raw, uid);
           if (filtered.isEmpty) continue;
 
           for (final m in filtered) {
@@ -802,12 +708,7 @@ class _ProfilePageState extends State<ProfilePage> {
       try {
         final v = _withQuery(Uri.parse('$base/posts'), {'sort': 'createdAt:desc'});
         final raw = await _getPagedRaw(v);
-        final filtered = _filterToSpecificUser(
-          raw,
-          uid,
-          username: usernameTrim,
-          email: emailTrim,
-        );
+        final filtered = _filterToSpecificUser(raw, uid);
         for (final m in filtered) {
           final id = (m['_id'] ?? m['id'] ?? m['oid'])?.toString() ?? jsonEncode(m);
           if (seen.add(id)) collected.add(m);
@@ -816,14 +717,7 @@ class _ProfilePageState extends State<ProfilePage> {
       } catch (_) {}
     }
 
-    if (collected.isEmpty) {
-      final viaService = await _fetchPostsByUserViaService(
-        userId: uid.isNotEmpty ? uid : null,
-        username: usernameTrim,
-      );
-      if (viaService.isNotEmpty) return viaService;
-      return const <models.Post>[];
-    }
+    if (collected.isEmpty) return const <models.Post>[];
     final sorted = _sortNewestFirst(collected);
     return sorted.map((e) => models.Post.fromJson(e)).toList();
   }
@@ -933,20 +827,8 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _openRoles() async {
-    final idCandidate = _user?.oid ?? _user?.id?.toString() ?? '';
-    final trimmedId = idCandidate.trim();
-    final targetId = _isMine ? null : (trimmedId.isNotEmpty ? trimmedId : null);
-    final displayName = _displayName;
-    final email = _user?.email;
-
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => RolePage(
-          userId: targetId,
-          initialName: displayName.isNotEmpty ? displayName : null,
-          initialEmail: email,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const RolePage()),
     );
   }
 
@@ -1078,13 +960,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildProfileHeaderCard(BuildContext context) {
     final profileId = _user?.oid ?? _user?.id?.toString() ?? '—';
-    final isSelf = _isMine;
-    final roleHighlights = _roleHighlights;
-    final primaryRole = roleHighlights.isNotEmpty ? roleHighlights.first : '—';
-    final hasPrimaryRole = primaryRole.trim().isNotEmpty && primaryRole != '—';
-    final phoneDisplay = (_phoneNumber?.trim().isNotEmpty == true) ? _phoneNumber!.trim() : '—';
-    final rawEmail = (_user?.email ?? '').trim();
-    final emailDisplay = rawEmail.isNotEmpty ? rawEmail : '—';
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -1149,55 +1024,32 @@ class _ProfilePageState extends State<ProfilePage> {
                         children: [
                           const Icon(Icons.alternate_email, size: 16, color: Colors.black54),
                           const SizedBox(width: 6),
-                          Text(
-                            _displayUsername,
-                            style: const TextStyle(fontSize: 14, color: Colors.black87),
+                          Text(_displayUsername, style: const TextStyle(fontSize: 14, color: Colors.black87)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.phone_iphone, size: 16, color: Colors.black54),
+                          const SizedBox(width: 6),
+                          Text(_phoneNumber?.trim().isNotEmpty == true ? _phoneNumber! : '—',
+                              style: const TextStyle(fontSize: 14, color: Colors.black87)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.email_outlined, size: 16, color: Colors.black54),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _user?.email ?? '—',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13, color: Colors.black87),
+                            ),
                           ),
                         ],
                       ),
-                      if (isSelf) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.phone_iphone, size: 16, color: Colors.black54),
-                            const SizedBox(width: 6),
-                            Text(
-                              phoneDisplay,
-                              style: const TextStyle(fontSize: 14, color: Colors.black87),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.email_outlined, size: 16, color: Colors.black54),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                emailDisplay,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 13, color: Colors.black87),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      if (hasPrimaryRole) ...[
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            const Icon(Icons.badge_outlined, size: 16, color: Colors.black54),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                primaryRole,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14, color: Colors.black87),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -1216,10 +1068,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
             Row(
               children: [
-                if (isSelf) ...[
-                  Expanded(child: _kvTile('User ID', profileId)),
-                  const SizedBox(width: 8),
-                ],
+                Expanded(child: _kvTile('User ID', profileId)),
+                const SizedBox(width: 8),
                 Expanded(child: _kvTile('First name', (_user?.firstName ?? '—'))),
                 const SizedBox(width: 8),
                 Expanded(child: _kvTile('Last name', (_user?.lastName ?? '—'))),
@@ -1325,74 +1175,6 @@ class _ProfilePageState extends State<ProfilePage> {
       return local.isNotEmpty ? '@$local' : email;
     }
     return '@—';
-  }
-
-  List<String> get _roleHighlights {
-    final raw = _user?.raw;
-    if (raw == null) return const [];
-    final seen = <String>{};
-    final roles = <String>[];
-
-    late void Function(dynamic) addRoleValue;
-
-    void extractMap(Map<dynamic, dynamic> source) {
-      final map = <String, dynamic>{};
-      source.forEach((key, value) {
-        if (key is String) {
-          map[key] = value;
-        }
-      });
-      addRoleValue(map['label']);
-      addRoleValue(map['display']);
-      addRoleValue(map['position']);
-      addRoleValue(map['position_label']);
-      addRoleValue(map['position_key']);
-      addRoleValue(map['title']);
-      addRoleValue(map['name']);
-      addRoleValue(map['short']);
-      addRoleValue(map['shortname']);
-      addRoleValue(map['short_name']);
-      final nestedOrg = map['org'] ?? map['org_unit'];
-      if (nestedOrg is Map) {
-        extractMap(nestedOrg);
-      }
-      final labels = map['labels'] ?? map['roleLabels'];
-      if (labels is Iterable) {
-        addRoleValue(labels);
-      }
-    }
-
-    addRoleValue = (dynamic value) {
-      if (value == null) return;
-      if (value is String) {
-        final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
-        if (normalized.isEmpty) return;
-        if (seen.add(normalized)) {
-          roles.add(normalized);
-        }
-        return;
-      }
-      if (value is Iterable) {
-        for (final item in value) {
-          addRoleValue(item);
-        }
-        return;
-      }
-      if (value is Map) {
-        extractMap(value);
-        return;
-      }
-      addRoleValue(value.toString());
-    };
-
-    addRoleValue(raw['roles']);
-    addRoleValue(raw['Roles']);
-    addRoleValue(raw['memberships']);
-    addRoleValue(raw['positions']);
-    addRoleValue(raw['primaryRole']);
-    addRoleValue(raw['role']);
-
-    return roles;
   }
 
   ImageProvider<Object>? _avatarProvider() {
