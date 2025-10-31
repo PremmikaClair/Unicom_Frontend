@@ -538,7 +538,8 @@ class _HomePageState extends State<HomePage> {
       mainAxisSize: MainAxisSize.min,
       children: [
         HeaderSection(
-          greenBackground: true,
+          showBackground: false,   // ✅ ไม่มีพื้นหลัง
+          greenBackground: false,  // ค่าไหนก็ได้ เพราะไม่ใช้พื้นหลัง
           greetingName: _firstName,
           onAvatarTap: () {
             Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
@@ -550,7 +551,8 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 12),
         _incomingEventsSection(context),
         Material(
-          color: Theme.of(context).scaffoldBackgroundColor,
+          // ✨ CHANGED: โปร่งใสเพื่อให้เห็นกราเดียนต์ด้านหลัง
+          color: Colors.transparent,
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
             child: Row(
@@ -663,17 +665,36 @@ class _HomePageState extends State<HomePage> {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Column(
-        children: [
-          header,
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _onRefresh,
-              child: postsList,
-            ),
+      // ✨ CHANGED: ให้สีพื้นหลังโปร่งใส แล้วใช้ Container ข้างในใส่ gradient
+      backgroundColor: Colors.transparent,
+      body: Container(
+        // ✨ CHANGED: พื้นหลังกราเดียนต์ทั้งหน้า
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            stops: [0.0, 0.55, 1.0],
+            colors: [
+              Color(0xFFF6FFF4), // ขาวอมเขียว (คงไว้ได้)
+              Color(0xFFE6F8EE), // เขียวมิ้นต์อ่อน
+              Color(0xFFCDEFD9), // เขียวมิ้นต์กลาง // เขียวมิ้นต์สดขึ้น // ม่วงอ่อนมาก
+            ],
           ),
-        ],
+        ),
+        child: SafeArea( // ✨ CHANGED: ให้คอนเทนต์ไม่ชน status bar
+          bottom: false,
+          child: Column(
+            children: [
+              header,
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _onRefresh,
+                  child: postsList,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
