@@ -638,9 +638,9 @@ function mapEvent(row: any): EventDoc {
         description: s?.description,
       }))
     : undefined;
-  return {
-    id: toHexId(x?.id || x?._id),
-    _id: toHexId(x?._id || x?.id),
+  
+  return {    
+    _id: toHexId(x?.event_id || x?.id),
     node_id: toHexId(x?.node_id),
     topic: x?.topic || "",
     description: x?.description,

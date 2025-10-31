@@ -3,195 +3,236 @@ import 'app_colors.dart';
 import '../services/auth_service.dart';
 
 class HeaderSection extends StatelessWidget {
-  final VoidCallback? onAvatarTap;
-  final VoidCallback? onSettingsTap;
-  final bool greenBackground; // use green header like Events
-  final String? greetingName; // shows "Hi, {name}!" next to avatar
-  final String? avatarUrl;    // actual user avatar if provided
-  // When true: show only a centered logo (no texts), used for Home header per request
-  final bool centerLogoOnly;
+  final VoidCallback? onAvatarTap;   // คงไว้เผื่อใช้งาน
+  final VoidCallback? onSettingsTap; // แตะที่โลโก้
+
+  /// true = มีพื้นหลัง, false = ไม่มีพื้นหลัง (ลอย)
+  final bool showBackground;
+
+  /// ใช้คู่กับ showBackground=true เท่านั้น
+  /// true = เขียว/ขาว, false = ไล่ชมพู-ม่วงอ่อน
+  final bool greenBackground;
+
+  final String? greetingName;        // ชื่อผู้ใช้
+  final String? subtitle;            // ข้อความใต้ชื่อ (optional)
+
   const HeaderSection({
     super.key,
     this.onAvatarTap,
     this.onSettingsTap,
+    this.showBackground = false,     // ค่าเริ่มต้น: ไม่มีพื้นหลัง
     this.greenBackground = false,
     this.greetingName,
-    this.avatarUrl,
-    this.centerLogoOnly = false,
+    this.subtitle,
   });
+
+  String _firstName(String? s) {
+    final t = (s ?? '').trim();
+    if (t.isEmpty) return 'there';
+    return t.split(RegExp(r'\s+')).first;
+  }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final titleText = 'Hello ${_firstName(greetingName)},';
+    final subText = subtitle ?? "Let's Elevate Your Skin's Health";
 
-    // Simple centered-logo header (no texts)
-    if (centerLogoOnly) {
-      final logo = SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Try ourlogo.png first; fallback to KU.png if missing
-              Image.asset(
-                'assets/images/ourlogo.png',
-                height: 50,
-                fit: BoxFit.contain,
-                errorBuilder: (ctx, err, stack) => Image.asset(
-                  'assets/images/KU.png',
-                  height: 50,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      if (!greenBackground) return logo;
-
-      const headerG1 = Color(0xFF7E9766);
-      const headerG2 = Color(0xFF7E9766);
-      return Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [headerG1, headerG2]),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [logo, const SizedBox(height: 6)],
-        ),
-      );
-    }
-
+    // ---------- เนื้อหา ----------
     final content = SafeArea(
       bottom: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-        child: Column(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // ---------- แถวบน: Avatar ซ้าย + KU/COM ขวา ----------
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Left block: avatar + greeting stacked with welcome + tagline (left aligned)
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Profile picture (real avatar when available)
-                      GestureDetector(
-                        onTap: onAvatarTap,
-                        child: _HeaderAvatar(url: avatarUrl),
-                      ),
-                      const SizedBox(width: 8),
-                      // Texts stacked to the right of avatar
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if ((greetingName ?? '').trim().isNotEmpty)
-                              Text(
-                                'Hi, ${greetingName!.trim()}!',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 18,
-                                  color: greenBackground ? const Color(0xFFF1F4EA) : Colors.black87,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: 'Welcome to ',
-                                    style: TextStyle(
-                                      color: greenBackground ? const Color(0xFFF1F4EA) : AppColors.sage,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: 'KU',
-                                    style: TextStyle(
-                                      color: greenBackground ? Colors.white : AppColors.deepGreen,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: 'COM',
-                                    style: TextStyle(
-                                      color: greenBackground ? const Color(0xFFF1F4EA) : AppColors.sage,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              style: textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: greenBackground ? Colors.white : Colors.black87,
-                                fontSize: 18,
-                                height: 1.1,
-                              ),
-                              textAlign: TextAlign.left,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Your friendly space to share, connect, and thrive.',
-                              style: textTheme.bodyMedium?.copyWith(
-                                color: greenBackground ? const Color(0xFFF1F4EA) : AppColors.sage,
-                                fontSize: 12,
-                              ),
-                              textAlign: TextAlign.left,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              softWrap: false,
-                            ),
-                          ],
+            // Left: Title + Subtitle
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    titleText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black87,
+                          height: 1.0,
+                        ) ??
+                        const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black87,
+                          height: 1.0,
                         ),
-                      ),
-                    ],
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodyMedium?.copyWith(
+                          color: Colors.black54,
+                          height: 1.2,
+                        ) ??
+                        const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black54,
+                          height: 1.2,
+                        ),
+                  ),
+                ],
+              ),
+            ),
 
-                // Right: KU/COM Logo
-                Image.asset(
-                  'assets/images/KU.png',
-                  height: 45,
-                  fit: BoxFit.contain,
-                ),
-              ],
+            const SizedBox(width: 12),
+
+            // Right: โลโก้ตัวอักษร "KUCOM" โทนเขียวเมทัลลิก (กดได้)
+            GestureDetector(
+              onTap: onSettingsTap,
+              child: const KucomWordmarkGreen(size: 34), // ปรับขนาดตามต้องการ
             ),
           ],
         ),
       ),
     );
 
-    if (!greenBackground) return content;
+    // ---------- ไม่มีพื้นหลัง ----------
+    if (!showBackground) return content;
 
-    // Wrap with the same green tone as Events header
-    const headerG1 = Color(0xFF7E9766);
-    const headerG2 = Color(0xFF7E9766);
+    // ---------- พื้นหลัง (ใช้เมื่อ showBackground = true) ----------
+    final BoxDecoration bg = greenBackground
+        ? const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF)],
+            ),
+          )
+        : const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFF6D9F2), Color(0xFFE6E0FF)],
+            ),
+          );
+
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [headerG1, headerG2],
-        ),
-      ),
+      decoration: bg,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           content,
-          const SizedBox(height: 6), // tighter bottom space within green area
+          if (greenBackground) const SizedBox(height: 6),
+        ],
+      ),
+    );
+  }
+}
+
+/// โลโก้ตัวอักษร "KUCOM" โทนเขียวเมทัลลิก (แนวเดียวกับภาพตัวอย่าง)
+class KucomWordmarkGreen extends StatelessWidget {
+  final double size; // ความสูงของตัวอักษร
+  const KucomWordmarkGreen({super.key, this.size = 34});
+
+  @override
+  Widget build(BuildContext context) {
+    // ไล่เฉดเขียวเมทัลลิก
+    final LinearGradient metallicGreen = const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFFEFFAF1), // ไฮไลต์เกือบขาวอมเขียว
+        Color(0xFFA8E6B5), // เขียวสว่าง
+        Color(0xFF45A057), // เขียวกลาง
+        Color(0xFF0F6D2A), // เขียวเข้มเมทัล
+        Color(0xFFEFFAF1), // ไฮไลต์กลับปลาย
+      ],
+      stops: [0.0, 0.28, 0.55, 0.82, 1.0],
+    );
+
+    // สไตล์ตัวอักษร: ใช้ italic + serif fallback ให้ฟีลคล้ายฟอนต์ในภาพ
+    TextStyle base(double strokeWidth, {bool stroke = false}) {
+      final p = Paint()
+        ..isAntiAlias = true
+        ..style = stroke ? PaintingStyle.stroke : PaintingStyle.fill
+        ..strokeWidth = strokeWidth
+        ..color = stroke ? Colors.white.withOpacity(0.95) : Colors.white;
+
+      return TextStyle(
+        fontSize: size,
+        fontStyle: FontStyle.italic,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.8,
+        height: 1.0,
+        fontFamilyFallback: const ['Times New Roman', 'Georgia', 'serif'],
+        foreground: p,
+      );
+    }
+
+    const text = 'KUCOM';
+
+    return Transform(
+      // เอียงเล็กน้อยให้ใกล้เคียงตัวอย่าง
+      transform: Matrix4.skewX(-0.12),
+      alignment: Alignment.centerRight,
+      child: Stack(
+        alignment: Alignment.centerRight,
+        children: [
+          // เงาเบา ๆ ใต้ตัวอักษรให้ดูนูน
+          Positioned(
+            top: 1.1,
+            child: Text(
+              text,
+              style: base(0).copyWith(
+                color: Colors.black.withOpacity(0.18),
+                foreground: null,
+              ),
+            ),
+          ),
+
+          // เส้นขอบขาวบาง ๆ ตัดกับพื้นหลัง
+          Text(text, style: base(1.6, stroke: true)),
+
+          // เติมลำตัวด้วยกราเดียนต์เขียวเมทัลลิก
+          ShaderMask(
+            shaderCallback: (rect) => metallicGreen.createShader(rect),
+            child: Text(
+              text,
+              textAlign: TextAlign.right,
+              style: base(0, stroke: false).copyWith(
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withOpacity(0.25),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1.2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ไฮไลต์เส้นแววบาง ๆ ให้ความรู้สึกโลหะ
+          IgnorePointer(
+            child: ShaderMask(
+              blendMode: BlendMode.srcATop,
+              shaderCallback: (rect) => const LinearGradient(
+                begin: Alignment(-0.8, -1.0),
+                end: Alignment(0.9, 1.0),
+                colors: [Colors.white, Colors.transparent],
+                stops: [0.0, 1.0],
+              ).createShader(rect),
+              child: Text(
+                text,
+                style: base(0).copyWith(
+                  color: Colors.white.withOpacity(0.16),
+                  foreground: null,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

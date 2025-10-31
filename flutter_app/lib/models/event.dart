@@ -15,6 +15,7 @@ class AppEvent {
   final int? likeCount;     // if you want to sort/popular
   final int? capacity;      // backend: event.max_participation
   final bool? haveForm;     // backend: event.have_form
+  final int? currentParticipants; // backend: event.current_participation (list format)
 
   const AppEvent({
     required this.id,
@@ -31,6 +32,7 @@ class AppEvent {
     this.likeCount,
     this.capacity,
     this.haveForm,
+    this.currentParticipants,
   });
 
   factory AppEvent.fromJson(Map<String, dynamic> json) {
@@ -73,6 +75,9 @@ class AppEvent {
               ? json['max_participation'] as int
               : (int.tryParse('${json['capacity']}') ?? int.tryParse('${json['max_participation']}')),
       haveForm: json['have_form'] is bool ? json['have_form'] as bool : null,
+      currentParticipants: (json['current_participation'] is int)
+          ? json['current_participation'] as int
+          : int.tryParse('${json['current_participation']}'),
     );
   }
 
@@ -91,5 +96,6 @@ class AppEvent {
     'likeCount': likeCount,
     'capacity': capacity,
     'have_form': haveForm,
+    'current_participation': currentParticipants,
   };
 }

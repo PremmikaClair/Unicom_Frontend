@@ -1,0 +1,614 @@
+diff --git a/flutter_app/lib/pages/login/login_page.dart b/flutter_app/lib/pages/login/login_page.dart
+index 002d3f7..aada110 100644
+--- a/flutter_app/lib/pages/login/login_page.dart
++++ b/flutter_app/lib/pages/login/login_page.dart
+@@ -1,6 +1,5 @@
+ import 'package:flutter/material.dart';
+ import 'package:flutter_app/services/auth_service.dart';
+-import 'package:flutter_app/pages/auth/sign_up_page.dart';
+ 
+ class LoginPage extends StatefulWidget {
+   final VoidCallback? onLoggedIn;
+@@ -69,7 +68,7 @@ class _LoginPageState extends State<LoginPage> {
+ 
+             // Big title
+             const Positioned(
+-              top: 90,
++              top: 120,
+               left: 0,
+               right: 0,
+               child: Center(
+@@ -88,7 +87,7 @@ class _LoginPageState extends State<LoginPage> {
+             Align(
+               alignment: Alignment.bottomCenter,
+               child: Padding(
+-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
++                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+                 child: SingleChildScrollView(
+                   physics: const BouncingScrollPhysics(),
+                   child: Column(
+@@ -103,6 +102,8 @@ class _LoginPageState extends State<LoginPage> {
+                         child: Image.asset('assets/images/login_image.png', fit: BoxFit.contain),
+                       ),
+ 
++                      const SizedBox(height: 24),
++
+                       // Email/password panel (keeps existing functionality)
+                       Container(
+                         decoration: BoxDecoration(
+@@ -143,45 +144,45 @@ class _LoginPageState extends State<LoginPage> {
+ 
+                       const SizedBox(height: 20),
+ 
+-                      // Email submit button (calls existing _submit)
++                      // KU ALL-Login button (placeholder; keep email flow functional)
+                       SizedBox(
+                         width: double.infinity,
+                         child: ElevatedButton(
+-                          onPressed: _busy ? null : _submit,
++                          onPressed: _busy
++                              ? null
++                              : () {
++                                  ScaffoldMessenger.of(context).showSnackBar(
++                                    const SnackBar(content: Text('KU All-Login coming soon')),
++                                  );
++                                },
+                           style: ElevatedButton.styleFrom(
+                             backgroundColor: deepTeal,
+                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
+                             padding: const EdgeInsets.symmetric(vertical: 14),
+                           ),
+-                          child: _busy
+-                              ? const SizedBox(
+-                                  height: 22,
+-                                  width: 22,
+-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+-                                )
+-                              : const Text('Login', style: TextStyle(fontSize: 18, color: Colors.white)),
++                          child: const Text('KU ALL-Login', style: TextStyle(fontSize: 18, color: Colors.white)),
+                         ),
+                       ),
+ 
+                       const SizedBox(height: 10),
+ 
+-                      // Sign up button
++                      // Email submit button (calls existing _submit)
+                       SizedBox(
+                         width: double.infinity,
+                         child: ElevatedButton(
+-                          onPressed: _busy
+-                              ? null
+-                              : () {
+-                                  Navigator.of(context).push(
+-                                    MaterialPageRoute(builder: (_) => const SignUpPage()),
+-                                  );
+-                                },
++                          onPressed: _busy ? null : _submit,
+                           style: ElevatedButton.styleFrom(
+                             backgroundColor: deepTeal,
+                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
+                             padding: const EdgeInsets.symmetric(vertical: 14),
+                           ),
+-                          child: const Text('Sign up', style: TextStyle(fontSize: 18, color: Colors.white)),
++                          child: _busy
++                              ? const SizedBox(
++                                  height: 22,
++                                  width: 22,
++                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
++                                )
++                              : const Text('Login with Email', style: TextStyle(fontSize: 18, color: Colors.white)),
+                         ),
+                       ),
+                     ],
+diff --git a/flutter_app/lib/pages/login/otp_page.dart b/flutter_app/lib/pages/login/otp_page.dart
+deleted file mode 100644
+index f6a36ab..0000000
+--- a/flutter_app/lib/pages/login/otp_page.dart
++++ /dev/null
+@@ -1,94 +0,0 @@
+-import 'package:flutter/material.dart';
+-
+-class OtpPage extends StatefulWidget {
+-  const OtpPage({super.key, required this.email});
+-  final String email;
+-
+-  @override
+-  State<OtpPage> createState() => _OtpPageState();
+-}
+-
+-class _OtpPageState extends State<OtpPage> {
+-  final _otp = TextEditingController();
+-  bool _busy = false;
+-  String? _error;
+-
+-  @override
+-  void dispose() {
+-    _otp.dispose();
+-    super.dispose();
+-  }
+-
+-  Future<void> _verify() async {
+-    if (_busy) return;
+-    setState(() { _busy = true; _error = null; });
+-    await Future<void>.delayed(const Duration(milliseconds: 200));
+-    if (!mounted) return;
+-    setState(() { _busy = false; });
+-    ScaffoldMessenger.of(context).showSnackBar(
+-      const SnackBar(content: Text('OTP verification not implemented yet.')),
+-    );
+-  }
+-
+-  Future<void> _resend() async {
+-    if (_busy) return;
+-    setState(() { _busy = true; _error = null; });
+-    await Future<void>.delayed(const Duration(milliseconds: 200));
+-    if (!mounted) return;
+-    setState(() { _busy = false; });
+-    ScaffoldMessenger.of(context).showSnackBar(
+-      const SnackBar(content: Text('Resend OTP not implemented yet.')),
+-    );
+-  }
+-
+-  @override
+-  Widget build(BuildContext context) {
+-    const deepTeal = Color(0xFF116466);
+-    return Scaffold(
+-      appBar: AppBar(
+-        title: const Text('Verify Email'),
+-        backgroundColor: deepTeal,
+-      ),
+-      body: SafeArea(
+-        child: Padding(
+-          padding: const EdgeInsets.all(16),
+-          child: Column(
+-            crossAxisAlignment: CrossAxisAlignment.stretch,
+-            children: [
+-              Text('Enter the 6-digit code sent to\n${widget.email}', textAlign: TextAlign.center),
+-              const SizedBox(height: 16),
+-              TextField(
+-                controller: _otp,
+-                keyboardType: TextInputType.number,
+-                maxLength: 6,
+-                decoration: const InputDecoration(
+-                  labelText: 'OTP Code',
+-                  border: OutlineInputBorder(),
+-                  counterText: '',
+-                ),
+-              ),
+-              const SizedBox(height: 8),
+-              if (_error != null)
+-                Text(_error!, style: const TextStyle(color: Colors.red)),
+-              const SizedBox(height: 16),
+-              ElevatedButton(
+-                onPressed: _busy ? null : _verify,
+-                style: ElevatedButton.styleFrom(
+-                  backgroundColor: deepTeal,
+-                  padding: const EdgeInsets.symmetric(vertical: 14),
+-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
+-                ),
+-                child: _busy
+-                    ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+-                    : const Text('Verify', style: TextStyle(color: Colors.white, fontSize: 16)),
+-              ),
+-              const SizedBox(height: 8),
+-              TextButton(onPressed: _busy ? null : _resend, child: const Text('Resend code')),
+-            ],
+-          ),
+-        ),
+-      ),
+-    );
+-  }
+-}
+-
+diff --git a/flutter_app/lib/pages/login/sign_up_page.dart b/flutter_app/lib/pages/login/sign_up_page.dart
+deleted file mode 100644
+index e24e71f..0000000
+--- a/flutter_app/lib/pages/login/sign_up_page.dart
++++ /dev/null
+@@ -1,331 +0,0 @@
+-import 'package:flutter/material.dart';
+-import 'package:flutter_app/services/auth_service.dart';
+-import 'package:flutter_app/pages/auth/otp_page.dart';
+-
+-class SignUpPage extends StatefulWidget {
+-  const SignUpPage({super.key});
+-
+-  @override
+-  State<SignUpPage> createState() => _SignUpPageState();
+-}
+-
+-class _SignUpPageState extends State<SignUpPage> {
+-  final _firstName = TextEditingController();
+-  final _lastName = TextEditingController();
+-  final _email = TextEditingController();
+-  final _password = TextEditingController();
+-  final _confirmPassword = TextEditingController();
+-  final _confirmFocus = FocusNode();
+-
+-  bool _busy = false;
+-  String? _error;
+-  bool _confirmBlurred = false;
+-  bool _submitted = false;
+-
+-  @override
+-  void initState() {
+-    super.initState();
+-    // Rebuild on input changes to update inline validation and button state
+-    _firstName.addListener(_onChanged);
+-    _lastName.addListener(_onChanged);
+-    _email.addListener(_onChanged);
+-    _password.addListener(_onChanged);
+-    _confirmPassword.addListener(_onChanged);
+-    _confirmFocus.addListener(() {
+-      if (!_confirmFocus.hasFocus) {
+-        // Mark as blurred so we only show error after the user leaves the field
+-        if (mounted) setState(() => _confirmBlurred = true);
+-      }
+-    });
+-  }
+-
+-  void _onChanged() {
+-    if (mounted) setState(() {});
+-  }
+-
+-  @override
+-  void dispose() {
+-    _firstName.dispose();
+-    _lastName.dispose();
+-    _email.dispose();
+-    _password.dispose();
+-    _confirmPassword.dispose();
+-    _confirmFocus.dispose();
+-    super.dispose();
+-  }
+-
+-  Future<void> _submit() async {
+-    if (_busy) return;
+-    final email = _email.text.trim();
+-    final fn = _firstName.text.trim();
+-    final ln = _lastName.text.trim();
+-    final pw = _password.text;
+-    final cpw = _confirmPassword.text;
+-
+-    if (fn.isEmpty || ln.isEmpty || email.isEmpty || pw.isEmpty) {
+-      setState(() => _error = 'Please fill in all required fields');
+-      return;
+-    }
+-    if (!email.endsWith('@ku.th')) {
+-      setState(() => _error = 'Email must be a @ku.th address');
+-      return;
+-    }
+-    if (pw != cpw) {
+-      setState(() => _error = 'Passwords do not match');
+-      return;
+-    }
+-
+-    setState(() { _busy = true; _error = null; _submitted = true; });
+-    try {
+-      final payload = RegisterPayload(
+-        firstname: fn,
+-        lastname: ln,
+-        email: email,
+-        password: pw,
+-      );
+-      await AuthService.I.register(payload);
+-
+-      if (!mounted) return;
+-      ScaffoldMessenger.of(context).showSnackBar(
+-        const SnackBar(content: Text('Registered. Check email for OTP.')),
+-      );
+-      Navigator.of(context).push(
+-        MaterialPageRoute(builder: (_) => OtpPage(email: email)),
+-      );
+-    } catch (e) {
+-      setState(() => _error = e.toString());
+-    } finally {
+-      if (mounted) setState(() => _busy = false);
+-    }
+-  }
+-
+-  @override
+-  Widget build(BuildContext context) {
+-    final emailText = _email.text.trim().toLowerCase();
+-    final emailOk = emailText.endsWith('@ku.th');
+-    final confirmMatches = _confirmPassword.text == _password.text;
+-    final showConfirmError = (_submitted || _confirmBlurred) &&
+-        _confirmPassword.text.isNotEmpty &&
+-        !confirmMatches;
+-    final requiredFilled = _firstName.text.isNotEmpty &&
+-        _lastName.text.isNotEmpty &&
+-        _email.text.isNotEmpty &&
+-        _password.text.isNotEmpty &&
+-        _confirmPassword.text.isNotEmpty;
+-    final canSubmit = requiredFilled && emailOk && confirmMatches && !_busy;
+-
+-    // Friendly green palette
+-    const bgTop = Color(0xFFECFDF5);    // emerald-50
+-    const bgBottom = Color(0xFFD1FAE5); // emerald-100
+-    const accent = Color(0xFF22C55E);   // emerald-500
+-    const accentDark = Color(0xFF16A34A); // emerald-600
+-    const deepTeal = Color(0xFF116466); // match Login button color
+-
+-    final theme = Theme.of(context);
+-
+-    return Scaffold(
+-      backgroundColor: Colors.white,
+-      body: SafeArea(
+-        child: Stack(
+-          children: [
+-            // Background + content
+-            Container(
+-              width: double.infinity,
+-              height: double.infinity,
+-              decoration: const BoxDecoration(
+-                gradient: LinearGradient(
+-                  begin: Alignment.topCenter,
+-                  end: Alignment.bottomCenter,
+-                  colors: [bgTop, bgBottom],
+-                ),
+-              ),
+-              child: Column(
+-                children: [
+-                  // Header
+-                  Padding(
+-                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+-                    child: Column(
+-                      children: [
+-                        Row(
+-                          mainAxisAlignment: MainAxisAlignment.center,
+-                          children: const [
+-                            Icon(Icons.favorite_rounded, color: accent, size: 28),
+-                            SizedBox(width: 8),
+-                            Text(
+-                              'Welcome',
+-                              style: TextStyle(
+-                                fontSize: 18,
+-                                fontWeight: FontWeight.w800,
+-                                color: Color(0xFF116466), // deepTeal to match Login button
+-                              ),
+-                            ),
+-                          ],
+-                        ),
+-                        const SizedBox(height: 8),
+-                        Text(
+-                          'Create Your KUCOM Account',
+-                          textAlign: TextAlign.center,
+-                          style: theme.textTheme.headlineSmall?.copyWith(
+-                            fontWeight: FontWeight.w800,
+-                            color: Colors.black87,
+-                            letterSpacing: -0.3,
+-                          ),
+-                        ),
+-                        const SizedBox(height: 6),
+-                        Text(
+-                          'Just a few details and you’re in 💫',
+-                          textAlign: TextAlign.center,
+-                          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
+-                        ),
+-                      ],
+-                    ),
+-                  ),
+-
+-                  // Scrollable form (starts below the text)
+-                  Expanded(
+-                    child: Align(
+-                      alignment: Alignment.topCenter,
+-                      child: ConstrainedBox(
+-                        constraints: const BoxConstraints(maxWidth: 520),
+-                        child: SingleChildScrollView(
+-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+-                          child: Column(
+-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+-                            children: [
+-                              TextField(
+-                                controller: _firstName,
+-                                textCapitalization: TextCapitalization.words,
+-                                decoration: const InputDecoration(
+-                                  labelText: 'First name',
+-                                  prefixIcon: Icon(Icons.person_outline),
+-                                  filled: true,
+-                                  fillColor: Color(0xFFF0FDF4), // emerald-50
+-                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+-                                ),
+-                              ),
+-                              const SizedBox(height: 12),
+-                              TextField(
+-                                controller: _lastName,
+-                                textCapitalization: TextCapitalization.words,
+-                                decoration: const InputDecoration(
+-                                  labelText: 'Last name',
+-                                  prefixIcon: Icon(Icons.person_outline),
+-                                  filled: true,
+-                                  fillColor: Color(0xFFF0FDF4),
+-                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+-                                ),
+-                              ),
+-                              const SizedBox(height: 12),
+-                              TextField(
+-                                controller: _email,
+-                                keyboardType: TextInputType.emailAddress,
+-                                autofillHints: const [AutofillHints.email],
+-                                decoration: InputDecoration(
+-                                  labelText: 'Email (@ku.th)',
+-                                  prefixIcon: const Icon(Icons.alternate_email_rounded),
+-                                  filled: true,
+-                                  fillColor: const Color(0xFFF0FDF4),
+-                                  border: const OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+-                                  errorText: _email.text.isNotEmpty && !emailOk
+-                                      ? 'Use your @ku.th email'
+-                                      : null,
+-                                ),
+-                              ),
+-                              const SizedBox(height: 12),
+-                              TextField(
+-                                controller: _password,
+-                                obscureText: true,
+-                                decoration: const InputDecoration(
+-                                  labelText: 'Password',
+-                                  prefixIcon: Icon(Icons.lock_outline_rounded),
+-                                  filled: true,
+-                                  fillColor: Color(0xFFF0FDF4),
+-                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+-                                ),
+-                              ),
+-                              const SizedBox(height: 12),
+-                          TextField(
+-                            controller: _confirmPassword,
+-                            obscureText: true,
+-                            focusNode: _confirmFocus,
+-                            decoration: InputDecoration(
+-                              labelText: 'Confirm password',
+-                              prefixIcon: const Icon(Icons.lock_outline_rounded),
+-                              filled: true,
+-                              fillColor: const Color(0xFFF0FDF4),
+-                              border: const OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+-                              errorText: showConfirmError ? 'Passwords do not match' : null,
+-                            ),
+-                          ),
+-                              const SizedBox(height: 8),
+-                              if (_error != null)
+-                                Text(_error!, style: const TextStyle(color: Colors.red)),
+-                            ],
+-                          ),
+-                        ),
+-                      ),
+-                    ),
+-                  ),
+-                ],
+-              ),
+-            ),
+-
+-            // Floating back arrow (top-left) — dark grey, no background
+-            Positioned(
+-              top: 8,
+-              left: 4,
+-              child: SafeArea(
+-                child: IconButton(
+-                  icon: const Icon(Icons.arrow_back_rounded, size: 24, color: Color(0xFF424242)),
+-                  splashColor: Colors.transparent,
+-                  highlightColor: Colors.transparent,
+-                  tooltip: 'Back',
+-                  onPressed: () => Navigator.of(context).pop(),
+-                ),
+-              ),
+-            ),
+-          ],
+-        ),
+-      ),
+-      // Fixed bottom CTA that lifts with keyboard
+-      bottomNavigationBar: SafeArea(
+-        top: false,
+-        child: AnimatedPadding(
+-          duration: const Duration(milliseconds: 150),
+-          curve: Curves.easeOut,
+-          padding: EdgeInsets.only(
+-            left: 16,
+-            right: 16,
+-            bottom: 12 + MediaQuery.of(context).viewInsets.bottom,
+-          ),
+-          child: Column(
+-            mainAxisSize: MainAxisSize.min,
+-            children: [
+-              const Text(
+-                'We’ll send an OTP to your email',
+-                style: TextStyle(color: Colors.black54),
+-              ),
+-              const SizedBox(height: 8),
+-              SizedBox(
+-                height: 52,
+-                width: double.infinity,
+-                child: ElevatedButton(
+-                  onPressed: canSubmit ? _submit : null,
+-                  style: ElevatedButton.styleFrom(
+-                    backgroundColor: deepTeal,
+-                    disabledBackgroundColor: deepTeal.withOpacity(0.5),
+-                    elevation: 0,
+-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+-                  ),
+-                  child: _busy
+-                      ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+-                      : const Text('Create Account', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+-                ),
+-              ),
+-            ],
+-          ),
+-        ),
+-      ),
+-    );
+-  }
+-}
+diff --git a/flutter_app/lib/services/auth_service.dart b/flutter_app/lib/services/auth_service.dart
+index e1f920e..0781800 100644
+--- a/flutter_app/lib/services/auth_service.dart
++++ b/flutter_app/lib/services/auth_service.dart
+@@ -78,40 +78,6 @@ class AuthService {
+     await _saveToken(null);
+   }
+ 
+-  // ---- Registration (Sign Up) ----
+-  // Payload mirrors backend models.RegisterRequest JSON schema
+-  // firstname, lastname, email, password are the common required fields
+-  // others are optional
+-  Future<Map<String, dynamic>> register(RegisterPayload p) async {
+-    final uri = apiUri('/register');
+-    final body = jsonEncode({
+-      'firstname': p.firstname.trim(),
+-      'lastname': p.lastname.trim(),
+-      if (p.thaiprefix != null && p.thaiprefix!.isNotEmpty) 'thaiprefix': p.thaiprefix,
+-      if (p.gender != null && p.gender!.isNotEmpty) 'gender': p.gender,
+-      if (p.typePerson != null && p.typePerson!.isNotEmpty) 'type_person': p.typePerson,
+-      if (p.studentId != null && p.studentId!.isNotEmpty) 'student_id': p.studentId,
+-      if (p.advisorId != null && p.advisorId!.isNotEmpty) 'advisor_id': p.advisorId,
+-      'email': p.email.trim(),
+-      'password': p.password,
+-      if (p.organizePath != null && p.organizePath!.isNotEmpty) 'organize_path': p.organizePath,
+-    });
+-
+-    final res = await http
+-        .post(
+-          uri,
+-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+-          body: body,
+-        )
+-        .timeout(const Duration(seconds: 15));
+-
+-    if (res.statusCode != 201) {
+-      throw Exception('Register failed: ${res.statusCode} ${res.body}');
+-    }
+-    final data = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body);
+-    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+-  }
+-
+   /// POST /login { email, password } -> { accessToken }
+   Future<void> login(String email, String password) async {
+     final uri = apiUri('/login');
+@@ -149,29 +115,3 @@ class AuthService {
+     return data is Map<String, dynamic> ? data : <String, dynamic>{};
+   }
+ }
+-
+-class RegisterPayload {
+-  RegisterPayload({
+-    required this.firstname,
+-    required this.lastname,
+-    this.thaiprefix,
+-    this.gender,
+-    this.typePerson,
+-    this.studentId,
+-    this.advisorId,
+-    required this.email,
+-    required this.password,
+-    this.organizePath,
+-  });
+-
+-  final String firstname;
+-  final String lastname;
+-  final String? thaiprefix;
+-  final String? gender;
+-  final String? typePerson;
+-  final String? studentId;
+-  final String? advisorId;
+-  final String email;
+-  final String password;
+-  final String? organizePath;
+-}

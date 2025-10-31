@@ -121,9 +121,10 @@ useEffect(() => {
   // ----- Row expand / edit
   const handleToggleInfo = (user: User) => {
     const key = getKey(user);
+    console.log(`toggle info for user key=${key}`);
     if (expandedUserKey === key) {
       setExpandedUserKey(null);
-      setEditing(false);
+      setEditing(false);      
     } else {
       setExpandedUserKey(key);
       setEditableUser({
@@ -218,15 +219,6 @@ useEffect(() => {
           👤 User Management
           <span className="text-xs font-normal text-gray-500">cute mode</span>
         </h1>
-        <div className="flex items-center gap-3">
-          {error && <span className="text-sm text-red-600">{error}</span>}
-          <button
-            onClick={onCreate}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-sm inline-flex items-center gap-1 shadow-sm"
-          >
-            <PlusIcon /> New User
-          </button>
-        </div>
       </div>
 
       <table className="min-w-full bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -265,7 +257,7 @@ useEffect(() => {
                         onClick={() => handleToggleInfo(user)}
                         className="text-xs px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 shadow-sm"
                       >
-                        Edit
+                        Info
                       </button>
                       <button
                         onClick={() => onDelete(user)}
@@ -287,9 +279,9 @@ useEffect(() => {
                           <div><strong>Name:</strong> {user.firstName} {user.lastName}</div>
                           <div><strong>Student ID:</strong> {user.student_id ?? "-"}</div>
                           <div className="md:col-span-2 flex gap-2 mt-1">
-                            <button onClick={() => setEditing(true)} className="text-xs px-3 py-1 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-700 shadow-sm">
+                            {/* <button onClick={() => setEditing(true)} className="text-xs px-3 py-1 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-700 shadow-sm">
                               Edit
-                            </button>
+                            </button> */}
                           </div>
                         </div>
                       ) : (
@@ -342,12 +334,7 @@ useEffect(() => {
                                 <span className="text-xs text-gray-400">—</span>
                               )}
                             </div>
-                          </div>
-
-                          <div className="md:col-span-2 flex gap-2 mt-2">
-                            <button onClick={handleSave} className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full text-sm shadow-sm" disabled={loading}>Save</button>
-                            <button onClick={() => { setEditing(false); const original = users.find((u) => getKey(u) === getKey(editableUser)); if (original) setEditableUser({ ...original, memberships: original.memberships ?? [] }); }} className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-full text-sm">Cancel</button>
-                          </div>
+                          </div>                      
                         </div>
                       )}
                     </td>

@@ -15,7 +15,7 @@ import 'explore/hashtag_feed_page.dart';
 
 import '../components/filter_pill.dart';
 import '../components/filter_sheet.dart';
-
+import '../components/header_section.dart';
 import '../controllers/like_controller.dart';
 
 class HomePage extends StatefulWidget {
@@ -621,7 +621,17 @@ class _HomePageState extends State<HomePage> {
     final header = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildHomeHeader(context),
+        HeaderSection(
+          showBackground: false,   // ✅ ไม่มีพื้นหลัง
+          greenBackground: false,  // ค่าไหนก็ได้ เพราะไม่ใช้พื้นหลัง
+          greetingName: _firstName,
+          onAvatarTap: () {
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
+          },
+          onSettingsTap: () {
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
+          },
+        ),
         const SizedBox(height: 12),
         _incomingEventsSection(context),
         Material(
