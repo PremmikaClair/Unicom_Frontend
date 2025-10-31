@@ -59,11 +59,23 @@ class Post {
   static DateTime _readDate(dynamic v) {
     if (v == null) return DateTime.now();
     if (v is String) return DateTime.tryParse(v)?.toLocal() ?? DateTime.now();
-    if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+    if (v is int) {
+      final n = v;
+      if (n > 1000000000000) return DateTime.fromMillisecondsSinceEpoch(n ~/ 1000); // micros -> ms
+      if (n > 10000000000)   return DateTime.fromMillisecondsSinceEpoch(n);        // ms
+      if (n < 10000000000)   return DateTime.fromMillisecondsSinceEpoch(n * 1000); // sec -> ms
+      return DateTime.fromMillisecondsSinceEpoch(n);
+    }
     if (v is Map && v[r'$date'] != null) {
       final d = v[r'$date'];
       if (d is String) return DateTime.tryParse(d)?.toLocal() ?? DateTime.now();
-      if (d is int) return DateTime.fromMillisecondsSinceEpoch(d);
+      if (d is int) {
+        final n = d;
+        if (n > 1000000000000) return DateTime.fromMillisecondsSinceEpoch(n ~/ 1000);
+        if (n > 10000000000)   return DateTime.fromMillisecondsSinceEpoch(n);
+        if (n < 10000000000)   return DateTime.fromMillisecondsSinceEpoch(n * 1000);
+        return DateTime.fromMillisecondsSinceEpoch(n);
+      }
     }
     return DateTime.now();
   }
@@ -99,7 +111,9 @@ class Post {
     final authorRolesRaw = j['author_roles'] ?? j['Roles'];
     final visibilityRaw  = j['visibility_roles'];
     final profile        = j['profile_pic'] ?? j['profile pic'];
-    final dateRaw        = j['created_at'] ?? j['timestamp'] ?? j['time_stamp'] ?? j['Date'];
+    final dateRaw        = j['createdAt'] ?? j['created_at'] ?? j['createdAT'] ??
+                           j['timestamp'] ?? j['time_stamp'] ??
+                           j['Date'] ?? j['date'];
 
     // posted_as -> display label if possible
     String? _postedAsLabel() {
