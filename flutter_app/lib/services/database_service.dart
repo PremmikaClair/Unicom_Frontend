@@ -127,6 +127,78 @@ class DatabaseService {
     return PagedResult(items: items, nextCursor: next);
   }
 
+  // ---------- Posts by user (via query param user_id) ----------
+  // GET /posts?user_id=<id>&limit=&cursor=
+  Future<PagedResult<Post>> getPostsByUser({
+    required String userId,
+    int limit = 20,
+    String? cursor,
+  }) async {
+    // Try multiple common endpoint patterns, stop on first non-empty result
+    final attempts = <Uri>[
+      _buildUri('/posts', {
+        'user_id': userId,
+        'limit': '$limit',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      }),
+      _buildUri('/posts', {
+        'userId': userId,
+        'limit': '$limit',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      }),
+      _buildUri('/posts', {
+        'author_id': userId,
+        'limit': '$limit',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      }),
+      _buildUri('/posts', {
+        'authorId': userId,
+        'limit': '$limit',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      }),
+      // Non-query variants (some backends expose these; usually single page)
+      _buildUri('/users/profile/${Uri.encodeComponent(userId)}/posts', {}),
+      _buildUri('/users/${Uri.encodeComponent(userId)}/posts', {}),
+      _buildUri('/posts/user/${Uri.encodeComponent(userId)}', {}),
+    ];
+
+    for (final uri in attempts) {
+      try {
+        final res = await _get(uri, extra: const {'Accept': 'application/json'});
+        if (res.statusCode != 200) continue;
+        final body = res.body.trim();
+        if (body.isEmpty) continue;
+        final parsed = jsonDecode(body);
+
+        List<dynamic> list;
+        String? next;
+        if (parsed is List) {
+          list = parsed;
+          next = null;
+        } else if (parsed is Map<String, dynamic>) {
+          list = (parsed['items'] ?? parsed['Items'] ?? parsed['data'] ?? parsed['posts']) as List<dynamic>? ?? const [];
+          next = (parsed['next_cursor'] ?? parsed['NextCursor'] ?? parsed['nextCursor'])?.toString();
+        } else {
+          continue;
+        }
+
+        final items = list
+            .whereType<Map<String, dynamic>>()
+            .map((j) => Post.fromJson(j))
+            .where((p) => p.userId.trim() == userId.trim())
+            .toList();
+        if (items.isNotEmpty || next != null) {
+          return PagedResult(items: items, nextCursor: next);
+        }
+      } catch (_) {
+        // try next
+      }
+    }
+
+    // If all attempts fail, return empty page
+    return const PagedResult(items: <Post>[], nextCursor: null);
+  }
+
   //http://127.0.0.1:8000/posts/post_id
   //ได้โพสต์ที่มี is_liked
   Future<Post> getPostByIdFiber(String id) async {
@@ -822,14 +894,30 @@ class DatabaseService {
   // GET /users/profile/:id  (id is Mongo ObjectID string)
   Future<Map<String, dynamic>> getUserByObjectIdFiber(String objectId) async {
     final uri = _buildUri('/users/profile/${Uri.encodeComponent(objectId)}', {});
-
-    final res = await _get(uri);
+    final res = await _get(uri, extra: const {'Accept': 'application/json'});
 
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
     }
 
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    final body = res.body.trim();
+    if (body.isEmpty) return <String, dynamic>{};
+
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) {
+      // Unwrap common envelope keys
+      final keys = ['user', 'profile', 'data', 'result'];
+      for (final k in keys) {
+        final v = decoded[k];
+        if (v is Map<String, dynamic>) return v;
+      }
+      return decoded;
+    }
+    if (decoded is List && decoded.isNotEmpty) {
+      final first = decoded.first;
+      if (first is Map<String, dynamic>) return first;
+    }
+    return <String, dynamic>{};
   }
 
   // ---------- Events (main-webbase direct list) ----------

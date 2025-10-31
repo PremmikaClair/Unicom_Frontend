@@ -49,6 +49,7 @@ class _HomePageState extends State<HomePage> {
 
   // Greeting
   String? _firstName;
+  String? _myAvatarUrl;
 
   // Scrollers
   final _scroll = ScrollController();
@@ -220,8 +221,12 @@ class _HomePageState extends State<HomePage> {
       final f = (me['firstname'] ?? me['firstName'] ?? '').toString().trim();
       final l = (me['lastname'] ?? me['lastName'] ?? '').toString().trim();
       final full = [f, l].where((s) => s.isNotEmpty).join(' ').trim();
+      final av = (me['profile_pic'] ?? me['profilePic'] ?? me['avatar_url'] ?? me['avatar'] ?? '').toString().trim();
       if (!mounted) return;
-      if (full.isNotEmpty) setState(() => _firstName = full);
+      setState(() {
+        if (full.isNotEmpty) _firstName = full;
+        if (av.isNotEmpty) _myAvatarUrl = av;
+      });
     } catch (_) {}
   }
 
@@ -245,10 +250,19 @@ class _HomePageState extends State<HomePage> {
     for (final id in ids) {
       try {
         final prof = await _db.getUserByObjectIdFiber(id);
-        final first = (prof['firstname'] ?? prof['firstName'] ?? '').toString();
-        final last = (prof['lastname'] ?? prof['lastName'] ?? '').toString();
-        final full = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
-        if (full.isNotEmpty) nameById[id] = full;
+        String display() {
+          final first = (prof['firstname'] ?? prof['firstName'] ?? '').toString().trim();
+          final last  = (prof['lastname']  ?? prof['lastName']  ?? '').toString().trim();
+          final full = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
+          if (full.isNotEmpty) return full;
+          final uname = (prof['username'] ?? prof['userName'] ?? prof['name'] ?? '').toString().trim();
+          if (uname.isNotEmpty) return uname;
+          final email = (prof['email'] ?? '').toString();
+          if (email.contains('@')) return email.split('@').first;
+          return '';
+        }
+        final d = display();
+        if (d.isNotEmpty) nameById[id] = d;
       } catch (_) {}
     }
 
@@ -539,13 +553,7 @@ class _HomePageState extends State<HomePage> {
       children: [
         HeaderSection(
           greenBackground: true,
-          greetingName: _firstName,
-          onAvatarTap: () {
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
-          },
-          onSettingsTap: () {
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
-          },
+          centerLogoOnly: true,
         ),
         const SizedBox(height: 12),
         _incomingEventsSection(context),

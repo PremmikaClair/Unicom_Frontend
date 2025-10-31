@@ -165,10 +165,17 @@ class Post {
         final fromUser = _readId(userObj['_id'] ?? userObj['id'] ?? userObj['uid'] ?? userObj['user_id']);
         if (fromUser.isNotEmpty) return fromUser;
       }
-      // Some APIs may embed author id in a top-level 'user' string
+      // Only trust top-level 'user' when it's an ObjectId-like string or a map
       final userField = j['user'];
-      final fromTopUser = _readId(userField);
-      return fromTopUser;
+      if (userField is Map) {
+        final fromMap = _readId(userField['_id'] ?? userField['id'] ?? userField['uid'] ?? userField['user_id']);
+        if (fromMap.isNotEmpty) return fromMap;
+      } else if (userField is String) {
+        final s = userField.trim();
+        final hex24 = RegExp(r'^[a-fA-F0-9]{24}$');
+        if (hex24.hasMatch(s)) return s; // looks like ObjectId
+      }
+      return '';
     }
 
     // Resolve username robustly
