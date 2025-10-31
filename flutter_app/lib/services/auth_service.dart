@@ -189,3 +189,30 @@ class AuthService {
     }
   }
 }
+
+// Registration payload used by SignUpPage and OTP resend
+class RegisterPayload {
+  RegisterPayload({
+    required this.firstname,
+    required this.lastname,
+    this.thaiprefix,
+    this.gender,
+    this.typePerson,
+    this.studentId,
+    this.advisorId,
+    required this.email,
+    required this.password,
+    this.organizePath,
+  });
+
+  final String firstname;
+  final String lastname;
+  final String? thaiprefix;
+  final String? gender;
+  final String? typePerson;
+  final String? studentId;
+  final String? advisorId;
+  final String email;
+  final String password;
+  final String? organizePath;
+}
