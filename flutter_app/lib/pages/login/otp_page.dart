@@ -31,10 +31,7 @@ class _OtpPageState extends State<OtpPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Account verified. Please log in.')),
       );
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-        (route) => false,
-      );
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       final msg = e.toString().toLowerCase();
       if (msg.contains('otp expired')) {
@@ -42,19 +39,13 @@ class _OtpPageState extends State<OtpPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('OTP expired. Please log in.')),
         );
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-          (route) => false,
-        );
+        Navigator.of(context).popUntil((route) => route.isFirst);
       } else if (msg.contains('user created successfully')) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Account created. Please log in.')),
         );
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-          (route) => false,
-        );
+        Navigator.of(context).popUntil((route) => route.isFirst);
       } else if (msg.contains('no otp') || msg.contains('no otp pending')) {
         if (!mounted) return;
         setState(() { _error = 'No OTP found. Please try again.'; });
