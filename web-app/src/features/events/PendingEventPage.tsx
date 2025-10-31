@@ -21,16 +21,16 @@ const PendingEventsPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      let [perm, list] = await Promise.all([
+      const [perm, list] = await Promise.all([
         getAbilitiesWhere("event:create").catch(() => ({ orgs: [] } as any)),
         listEvents(),
       ]);
       console.log(list)
     //   console.log(list[0]['visibility']['access']);
-      list = list.filter(item => item.visibility?.access === "pending");
+      const filterlist = list.filter(item => item.visibility?.access === "pending");
     //   console.log(list);
       setOrgs(perm?.orgs || []);
-      setRows(Array.isArray(list) ? list : []);
+      setRows(Array.isArray(filterlist) ? filterlist : []);
     } catch (e: any) {
       setError(e?.message || "Failed to load events");
     } finally {
