@@ -1,12 +1,13 @@
-// lib/pages/explore_page.dart
+// lib/pages/explore/explore_page.dart
 import 'package:flutter/material.dart';
 
-import '../../components/header_section_explore.dart';
 import 'hashtag_feed_page.dart';
+import 'searching_page.dart';
 import '../profile/profile_page.dart';
 import '../../services/database_service.dart';
 import '../../models/trend.dart' as tr;
-import 'search_feed_page.dart';
+import '../../shared/page_transitions.dart';
+import '../../components/app_colors.dart';
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
@@ -57,14 +58,12 @@ class _ExplorePageState extends State<ExplorePage> {
         category: _category,
         limit: 20,
       );
-      if (!mounted) return;
       setState(() {
         _items = res.items;
         _nextCursor = res.nextCursor;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -82,14 +81,12 @@ class _ExplorePageState extends State<ExplorePage> {
         cursor: _nextCursor,
         limit: 20,
       );
-      if (!mounted) return;
       setState(() {
         _items.addAll(res.items);
         _nextCursor = res.nextCursor;
         _fetchingMore = false;
       });
     } catch (_) {
-      if (!mounted) return;
       setState(() => _fetchingMore = false);
     }
   }
@@ -104,38 +101,154 @@ class _ExplorePageState extends State<ExplorePage> {
   // ---- UI ----
   @override
   Widget build(BuildContext context) {
-    final header = HeaderSectionExplore(
-      onAvatarTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ProfilePage()),
-        );
-      },
-      searchEditable: false,
-      onSearchTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => SearchFeedPage(
-              key: UniqueKey(),      // <- บังคับ instance ใหม่
-              initialQuery: '',      // พรีฟิลได้ตามต้องการ
-            ),
-            fullscreenDialog: true,   // (ทางเลือก) ให้ฟีล modal
-          ),
-        );
-      },
+    const headerG = Color(0xFF7E9766);
+    const greyBG = Color(0xFFEDEDED);
 
-    );
+    final textTheme = Theme.of(context).textTheme;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final subtitleSize = screenWidth < 360 ? 17.0 : 20.0;
+    final illoHeight = screenWidth < 360 ? 128.0 : 140.0;
+
+    const ctlHeight = 42.0;
+    const ctlRadius = 24.0;
 
     return Scaffold(
-      body: Column(
-        children: [
-          header,
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _loadFirstPage,
-              child: _buildBody(),
+      backgroundColor: headerG,
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          // Green header
+          SliverToBoxAdapter(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [headerG, headerG],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: SizedBox(
+                  height: illoHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 10, right: 12),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'TREND',
+                                maxLines: 1,
+                                overflow: TextOverflow.clip,
+                                style: textTheme.displaySmall?.copyWith(
+                                  fontSize: 52,
+                                  color: const Color(0xFFF1F4EA),
+                                  fontWeight: FontWeight.w900,
+                                  height: 0.90,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'at Kasetsart',
+                                maxLines: 1,
+                                softWrap: true,
+                                overflow: TextOverflow.visible,
+                                style: textTheme.titleLarge?.copyWith(
+                                  fontSize: subtitleSize,
+                                  color: const Color(0xFF283128).withOpacity(.78),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right:5),
+                        child: Align(
+                          alignment: Alignment.bottomRight,
+                          child: Transform.translate(
+                            offset: const Offset(0, 0),
+                            child: _crowdIllustration(illoHeight),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Grey rounded top + search
+          SliverToBoxAdapter(
+            child: Material(
+              color: greyBG,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 18),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(ctlRadius),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                fadeSlideRoute(const SearchingPage(autoFocus: true)),
+                              );
+                            },
+                            child: Container(
+                              height: ctlHeight,
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(ctlRadius),
+                              ),
+                              child: Row(
+                                children: const [
+                                  Icon(Icons.search, size: 20, color: Colors.black45),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Search posts, events, tags…',
+                                      style: TextStyle(color: Colors.black45, fontSize: 16),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _dateChip(),
+                ],
+              ),
             ),
           ),
         ],
+        body: Container(
+          color: greyBG,
+          child: RefreshIndicator(
+            onRefresh: _loadFirstPage,
+            child: _buildBody(),
+          ),
+        ),
       ),
     );
   }
@@ -183,13 +296,12 @@ class _ExplorePageState extends State<ExplorePage> {
     return ListView.separated(
       controller: _scrollCtrl,
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: list.length + 2,
-      separatorBuilder: (_, index) =>
-          index == 0 ? const SizedBox.shrink() : const Divider(height: 1),
+      padding: EdgeInsets.zero,
+      itemCount: list.length + 1, // footer
+      separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) {
-        if (index == 0) return _trendingHeader();
-
-        if (index == list.length + 1) {
+        // Footer
+        if (index == list.length) {
           if (_nextCursor != null || _fetchingMore) {
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -199,7 +311,7 @@ class _ExplorePageState extends State<ExplorePage> {
           return const SizedBox(height: 24);
         }
 
-        final item = list[index - 1];
+        final item = list[index];
         return _trendTile(item);
       },
     );
@@ -283,6 +395,58 @@ class _ExplorePageState extends State<ExplorePage> {
             Icon(Icons.trending_up_rounded, size: 25, color: color),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _dateChip() {
+    final label = _formattedDate();
+    final base = Theme.of(context).textTheme.titleLarge;
+    final style = (base ?? const TextStyle()).copyWith(
+      fontSize: 16,
+      color: const Color(0xFFF1F4EA),
+      fontWeight: FontWeight.w600,
+      letterSpacing: .4,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 0, top: 14, bottom: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: const BoxDecoration(
+            color: AppColors.sage,
+            borderRadius: BorderRadius.only(
+              topRight: Radius.circular(22),
+              bottomRight: Radius.circular(22),
+            ),
+          ),
+          child: Text(label, style: style),
+        ),
+      ),
+    );
+  }
+
+  String _formattedDate() {
+    final now = DateTime.now();
+    const months = [
+      'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+      'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'
+    ];
+    final m = months[now.month - 1];
+    final day = now.day;
+    return '$day $m ${now.year}';
+  }
+
+  Widget _crowdIllustration(double size) {
+    return SizedBox(
+      height: size,
+      width: size,
+      child: Image.asset(
+        'assets/images/crowedpeople.png',
+        fit: BoxFit.contain,
+        alignment: const Alignment(0.5, 0.8),
       ),
     );
   }

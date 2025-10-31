@@ -36,6 +36,8 @@ class _PostPageState extends State<PostPage> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   final _listController = ScrollController();
+  final Map<String, String> _userNameCache = {}; // cache userId -> display name
+  final Set<String> _fetchingUserIds = {};       // avoid duplicate in-flight fetches
 
   // ---- counters ----
   late int _commentCount = widget.post.comment;
@@ -114,8 +116,8 @@ class _PostPageState extends State<PostPage> {
         _nextCursor = page.nextCursor; // <- เก็บ cursor ไว้ใช้หน้าเพิ่ม
         _loading = false;
       });
-
-      await _enrichCommentUsers();
+      // enrich รายชื่อแบบเบื้องหลัง ไม่บล็อก UI
+      _enrichCommentUsers();
     } catch (e) {
       setState(() => _loading = false);
       _showSnack('โหลดคอมเมนต์ไม่สำเร็จ');
@@ -155,8 +157,8 @@ class _PostPageState extends State<PostPage> {
         _nextCursor = page.nextCursor; // ถ้าไม่มีต่อ จะเป็น null
       });
 
-      // enrich เฉพาะ userId รูปแบบ ObjectId ที่ยังไม่แปลง
-      await _enrichCommentUsers();
+      // enrich แบบเบื้องหลัง ไม่บล็อกการเลื่อน
+      _enrichCommentUsers();
     } catch (e) {
       _showSnack('โหลดคอมเมนต์หน้าเพิ่มไม่สำเร็จ');
     } finally {
@@ -164,33 +166,57 @@ class _PostPageState extends State<PostPage> {
     }
   }
 
-  // Enrich comment.user from userId -> profile name
+  // Enrich comment.user from userId -> profile name (concurrent + cached)
   Future<void> _enrichCommentUsers() async {
+    if (!mounted) return;
     final hex24 = RegExp(r'^[a-fA-F0-9]{24}$');
-    final ids = <String>{
+    // เก็บเฉพาะ id ที่ยังเป็นรูปแบบ ObjectId และยังไม่ได้ cache
+    final pending = <String>[
       for (final c in _comments)
-        if (c.user.isNotEmpty && hex24.hasMatch(c.user)) c.user,
-    };
+        if (c.user.isNotEmpty && hex24.hasMatch(c.user) && !_userNameCache.containsKey(c.user)) c.user,
+    ].toSet().toList();
+    if (pending.isEmpty) return;
+
+    // จำกัดจำนวนสูงสุดต่อรอบ เพื่อไม่อัด network
+    const int maxResolve = 20;
+    final ids = pending.take(maxResolve).where((id) => !_fetchingUserIds.contains(id)).toList();
     if (ids.isEmpty) return;
-    final Map<String, String> nameById = {};
-    for (final id in ids) {
+    _fetchingUserIds.addAll(ids);
+
+    // ยิงพร้อมกันทีละเป็น batch เล็ก ๆ ให้เร็วแต่ไม่หนักเกินไป
+    const int perBatch = 6;
+    for (var i = 0; i < ids.length; i += perBatch) {
+      final batch = ids.sublist(i, (i + perBatch).clamp(0, ids.length));
       try {
-        final prof = await _db.getUserByObjectIdFiber(id);
-        final first = (prof['firstname'] ?? prof['firstName'] ?? '').toString();
-        final last  = (prof['lastname']  ?? prof['lastName']  ?? '').toString();
-        final full = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
-        if (full.isNotEmpty) nameById[id] = full;
-      } catch (_) {
-        // ignore per-user failures
+        final futures = batch.map((id) async {
+          try {
+            final prof = await _db.getUserByObjectIdFiber(id);
+            final first = (prof['firstname'] ?? prof['firstName'] ?? '').toString();
+            final last  = (prof['lastname']  ?? prof['lastName']  ?? '').toString();
+            final full = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
+            if (full.isNotEmpty) return MapEntry(id, full);
+          } catch (_) {}
+          return null;
+        }).toList();
+        final results = await Future.wait(futures);
+        final updates = <String, String>{
+          for (final e in results)
+            if (e != null) e.key: e.value,
+        };
+
+        if (updates.isNotEmpty && mounted) {
+          setState(() {
+            _userNameCache.addAll(updates);
+            for (final c in _comments) {
+              final nm = _userNameCache[c.user];
+              if (nm != null) c.user = nm;
+            }
+          });
+        }
+      } finally {
+        _fetchingUserIds.removeAll(batch);
       }
     }
-    if (nameById.isEmpty || !mounted) return;
-    setState(() {
-      for (final c in _comments) {
-        final nm = nameById[c.user];
-        if (nm != null) c.user = nm;
-      }
-    });
   }
 
   void _focusCommentField() {
@@ -222,7 +248,7 @@ class _PostPageState extends State<PostPage> {
         _controller.clear();
       });
       _scrollToBottom();
-      await _enrichCommentUsers();
+      _enrichCommentUsers();
     } catch (e) {
       _showSnack('ส่งคอมเมนต์ไม่สำเร็จ');
     } finally {

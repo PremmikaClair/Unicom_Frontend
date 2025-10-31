@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
+import '../services/auth_service.dart';
 
 class HeaderSection extends StatelessWidget {
   final VoidCallback? onAvatarTap;   // คงไว้เผื่อใช้งาน
@@ -234,6 +235,31 @@ class KucomWordmarkGreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _HeaderAvatar extends StatelessWidget {
+  final String? url;
+  const _HeaderAvatar({this.url});
+
+  ImageProvider? _providerFrom(String? src) {
+    final s = (src ?? '').trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('assets/')) return AssetImage(s);
+    if (s.startsWith('http://') || s.startsWith('https://')) return NetworkImage(s);
+    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = _providerFrom(url);
+    return CircleAvatar(
+      radius: 20,
+      backgroundImage: prov,
+      child: prov == null ? const Icon(Icons.person, color: Colors.white) : null,
+      backgroundColor: AppColors.sage.withOpacity(.4),
     );
   }
 }

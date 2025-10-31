@@ -3,8 +3,8 @@ import '../home_page.dart';
 import '../explore/explore_page.dart';
 import '../event/events_page.dart';
 import 'club_page.dart';
-import 'profile_page.dart';
-import '../../components/bottom_nav.dart';
+// import 'profile_page.dart'; // not needed here; avoid circular import
+// import '../../components/bottom_nav.dart'; // not used in this screen
 import '../../services/database_service.dart';
 import '../../models/user.dart' as model;
 
@@ -54,6 +54,30 @@ class _RoleTextStyles {
 class _RolePageState extends State<RolePage> {
   int _selectedIndex = -1; // not highlighting any tab
   final _db = DatabaseService();
+
+  String _formatRoleTitle(String pos, String path) {
+    String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+    final raw = (pos).toString();
+    final p = raw.trim();
+    if (p.isEmpty) return 'Member';
+    final plow = p.toLowerCase();
+    // root_admin -> Admin
+    if (plow == 'root_admin' || plow.replaceAll('_', ' ') == 'root admin') {
+      return 'Admin';
+    }
+    // student -> Student + last node of path
+    if (plow.startsWith('student')) {
+      final parts = path
+          .split('/')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      final last = parts.isNotEmpty ? parts.last.toLowerCase() : '';
+      return last.isNotEmpty ? 'Student $last' : 'Student';
+    }
+    // default: make underscores spaces, capitalize first letter
+    return _cap(p.replaceAll('_', ' '));
+  }
 
   Future<void> _goBackToPrevious() async {
     FocusScope.of(context).unfocus();
@@ -134,7 +158,11 @@ class _RolePageState extends State<RolePage> {
 
               final profile = data.profile;
               final roles = data.memberships;
+              // detect clubs and prepare non-club list for this page
               bool hasClubs = roles.any((m) => (m['org_path']?.toString() ?? '').contains('/club'));
+              final rolesNonClub = roles
+                  .where((m) => !((m['org_path']?.toString() ?? '').contains('/club'))) 
+                  .toList();
 
               return SingleChildScrollView(
                 child: Column(
@@ -218,9 +246,9 @@ class _RolePageState extends State<RolePage> {
                               const Divider(height: 0),
                             ],
                           ),
-                          // List all memberships
-                          ...List.generate(roles.length, (i) {
-                            final m = roles[i];
+                          // List only non-club memberships here
+                          ...List.generate(rolesNonClub.length, (i) {
+                            final m = rolesNonClub[i];
                             final pos = (m['position_key'] ?? '').toString();
                             final path = (m['org_path'] ?? '').toString();
                             final active = m['active'] == true;
@@ -235,13 +263,9 @@ class _RolePageState extends State<RolePage> {
                                     size: 28,
                                     color: active ? Colors.black : Colors.black45,
                                   ),
-                                  title: Text(
-                                    pos.isNotEmpty ? pos : 'member',
-                                    style: _RoleTextStyles.listTitle,
-                                  ),
-                                  subtitle: Text(path),
+                                  title: Text(_formatRoleTitle(pos, path), style: _RoleTextStyles.listTitle),
                                 ),
-                                if (i != roles.length - 1) const Divider(height: 0),
+                                if (i != rolesNonClub.length - 1) const Divider(height: 0),
                               ],
                             );
                           }),

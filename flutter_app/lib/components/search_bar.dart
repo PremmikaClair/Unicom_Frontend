@@ -7,6 +7,7 @@ class SearchBarField extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
   final String hintText;
   final Color? fillColor;
+  final FocusNode? focusNode;    // add
   final bool readOnly;           // ⬅️ เพิ่ม
   final VoidCallback? onTap;     // ⬅️ เพิ่ม
 
@@ -16,6 +17,7 @@ class SearchBarField extends StatelessWidget {
     this.onSubmitted,
     this.hintText = 'Search',
     this.fillColor,
+    this.focusNode,              // add
     this.readOnly = false,       // ⬅️ เพิ่ม
     this.onTap,                  // ⬅️ เพิ่ม
   });
@@ -26,6 +28,7 @@ class SearchBarField extends StatelessWidget {
 
     return TextField(
       controller: controller,
+      focusNode: focusNode,      // add
       readOnly: readOnly,        // ⬅️
       onTap: onTap,              // ⬅️
       textInputAction: TextInputAction.search,
