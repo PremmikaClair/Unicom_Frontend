@@ -96,9 +96,15 @@ class Post {
       RegExp(r"\.(mp4|mov|webm|mkv|avi|m3u8|m4v)(\?.*)?$", caseSensitive: false).hasMatch(url);
 
   factory Post.fromJson(Map<String, dynamic> j) {
+    // Try to resolve nested author/user objects where present
+    Map<String, dynamic>? _asMap(dynamic v) =>
+        (v is Map<String, dynamic>) ? v : (v is Map ? Map<String, dynamic>.from(v) : null);
+
+    final userObj = _asMap(j['user']) ?? _asMap(j['author']) ?? _asMap(j['posted_by']) ?? _asMap(j['owner']);
     final authorRolesRaw = j['author_roles'] ?? j['Roles'];
     final visibilityRaw  = j['visibility_roles'];
-    final profile        = j['profile_pic'] ?? j['profile pic'];
+    final profile        = j['profile_pic'] ?? j['profile pic'] ?? j['profilePic'] ??
+        userObj?['profile_pic'] ?? userObj?['profilePic'] ?? userObj?['avatar_url'] ?? userObj?['avatar'];
     final dateRaw        = j['created_at'] ?? j['timestamp'] ?? j['time_stamp'] ?? j['Date'];
 
     // posted_as -> display label if possible
@@ -151,11 +157,40 @@ class Post {
       0,
     );
 
+    // Resolve user id robustly
+    String _resolveUserId() {
+      final direct = _readId(j['user_id'] ?? j['userId'] ?? j['author_id'] ?? j['authorId'] ?? j['uid']);
+      if (direct.isNotEmpty) return direct;
+      if (userObj != null) {
+        final fromUser = _readId(userObj['_id'] ?? userObj['id'] ?? userObj['uid'] ?? userObj['user_id']);
+        if (fromUser.isNotEmpty) return fromUser;
+      }
+      // Some APIs may embed author id in a top-level 'user' string
+      final userField = j['user'];
+      final fromTopUser = _readId(userField);
+      return fromTopUser;
+    }
+
+    // Resolve username robustly
+    String _resolveUsername() {
+      final direct = (j['username'] ?? j['userName'] ?? j['name'])?.toString();
+      if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+      if (userObj != null) {
+        final u = (userObj['username'] ?? userObj['userName'] ?? userObj['name'])?.toString();
+        if (u != null && u.trim().isNotEmpty) return u.trim();
+        final email = (userObj['email'] ?? '').toString();
+        if (email.contains('@')) return email.split('@').first;
+      }
+      final email = (j['email'] ?? '').toString();
+      if (email.contains('@')) return email.split('@').first;
+      return '';
+    }
+
     return Post(
       id: _readId(j['_id'] ?? j['id']),
-      userId: (j['user_id'] ?? j['uid'] ?? '').toString(),
+      userId: _resolveUserId(),
       profilePic: (profile ?? '').toString(),
-      username: (j['username'] ?? j['name'] ?? j['uid'] ?? '').toString(),
+      username: _resolveUsername(),
       category: _firstCategory(j['category']),
       // Prefer sanitized text from API (postText/post_text) over raw message
       message: (j['postText'] ?? j['post_text'] ?? j['message'] ?? '').toString(),

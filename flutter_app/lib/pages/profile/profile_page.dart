@@ -85,6 +85,10 @@ class _ProfilePageState extends State<ProfilePage> {
   final Set<String> _liked = {};
   final Map<String, int> _likeCounts = {};
   final Map<String, int> _commentCounts = {};
+  String? _resolvedUid; // resolved user id when viewing others
+  String? _postsNextCursor; // next cursor from getFeed for paging
+  String? _feedCursor;      // internal cursor when scanning feed for user's posts
+  bool _postsFetchingMore = false;
 
   // ===== Pagination / performance knobs =====
   static const int _pageLimit = 50;       // ต่อหน้า
@@ -174,18 +178,31 @@ class _ProfilePageState extends State<ProfilePage> {
     final all = <Map<String, dynamic>>[];
     final seen = <String>{};
 
-    Future<bool> _ingestResponse(http.Response r) async {
-      if (r.statusCode != 200) return false;
+    Future<(bool ok, Map<String, dynamic>? body)> _ingestResponse(http.Response r) async {
+      if (r.statusCode != 200) return (false, null);
       final dynamic decoded = _jsonDecodeSafe(r.body);
-      if (decoded is! Map) return false;
 
-      final chunk = _extractListFromAny(decoded);
+      List<Map<String, dynamic>> chunk;
+      Map<String, dynamic>? body;
+      if (decoded is List) {
+        chunk = decoded
+            .whereType<Map>()
+            .map<Map<String, dynamic>>((m) => Map<String, dynamic>.from(m))
+            .toList();
+        body = null; // array root → no cursor info
+      } else if (decoded is Map) {
+        body = Map<String, dynamic>.from(decoded);
+        chunk = _extractListFromAny(body);
+      } else {
+        return (false, null);
+      }
+
       for (final m in chunk) {
         final id = (m['_id'] ?? m['id'] ?? m['oid'])?.toString() ?? jsonEncode(m);
         if (seen.add(id)) all.add(m);
-        if (all.length >= _hardCapItems) return false; // ถึงเพดานก็หยุด
+        if (all.length >= _hardCapItems) return (false, body);
       }
-      return chunk.isNotEmpty;
+      return (chunk.isNotEmpty, body);
     }
 
     // ---------- A) cursor-first ----------
@@ -205,24 +222,23 @@ class _ProfilePageState extends State<ProfilePage> {
           try {
             final r = await http.get(u, headers: headers)
                                 .timeout(Duration(seconds: firstPageOnly ? 5 : 8));
-            final ok = await _ingestResponse(r);
+            final (ok, body) = await _ingestResponse(r);
             if (!ok) continue;
 
-            final dynamic body = _jsonDecodeSafe(r.body);
             int? totalPages;
-            if (body is Map) {
+            if (body != null) {
               final rawTotal = (body['totalPages'] ?? body['total_pages'] ?? body['pageCount']);
               totalPages = (rawTotal is int) ? rawTotal : int.tryParse(rawTotal?.toString() ?? '');
             }
 
-            final next = (body is Map) ? _findNextCursor(body) : null;
+            final next = (body != null) ? _findNextCursor(body) : null;
             progressed = true;
             cursor = next;
 
             if (firstPageOnly) return all; // ต้องการหน้าเดียวจริงๆ
             if (all.length >= _hardCapItems) return all;
 
-            if (body is Map) {
+            if (body != null) {
               if (next == null && !_hasMoreFlag(body, i + 1, totalPages, _extractListFromAny(body))) {
                 return all;
               }
@@ -245,8 +261,8 @@ class _ProfilePageState extends State<ProfilePage> {
           for (int page = start; page - start < _maxPages; page++) {
             final u = _withQuery(base, { pageKey: '$page', limitKey: '$_pageLimit', 'sort': 'createdAt:desc' });
             try {
-              final r = await http.get(u, headers: headers).timeout(const Duration(seconds: 8));
-              final ok = await _ingestResponse(r);
+              final r = await http.get(u, headers: headers).timeout(const Duration(seconds: 5));
+              final (ok, _) = await _ingestResponse(r);
               if (!ok) break;
             } catch (_) { break; }
             if (all.length >= _hardCapItems) return all;
@@ -261,8 +277,8 @@ class _ProfilePageState extends State<ProfilePage> {
       final offset = i * _pageLimit;
       final u = _withQuery(base, {'offset': '$offset', 'limit': '$_pageLimit', 'sort': 'createdAt:desc'});
       try {
-        final r = await http.get(u, headers: headers).timeout(const Duration(seconds: 8));
-        final ok = await _ingestResponse(r);
+        final r = await http.get(u, headers: headers).timeout(const Duration(seconds: 5));
+        final (ok, _) = await _ingestResponse(r);
         if (!ok) break;
       } catch (_) { break; }
       if (all.length >= _hardCapItems) return all;
@@ -431,42 +447,27 @@ class _ProfilePageState extends State<ProfilePage> {
     return _AuthorTriplet(id: id, email: email, username: username);
   }
 
-  List<Map<String, dynamic>> _filterToMineRaw(
-    List<Map<String, dynamic>> raw, {
-    required String? myId,
-    required String? myEmail,
-    String? myUsername,
-  }) {
-    final lowId = myId?.toLowerCase();
-    final lowEmail = myEmail?.toLowerCase();
-    final lowUser = myUsername?.toLowerCase();
-
-    return raw.where((m) {
-      final a = _authorTripletFromMap(m);
-      final byId = lowId != null && (a.id?.toLowerCase() == lowId);
-      final byEmail = lowEmail != null && (a.email?.toLowerCase() == lowEmail);
-      final byUsername = lowUser != null && (a.username?.toLowerCase() == lowUser);
-      return byId || byEmail || byUsername;
-    }).toList();
+  // -------- ID-only author extraction and filters --------
+  String? _authorIdFromMap(Map<String, dynamic> m) {
+    final authorRaw = m['author'] ?? m['user'] ?? m['owner'] ?? m['createdBy'] ?? m['postedBy'] ?? m['created_by'] ?? m['ownerBy'];
+    if (authorRaw is Map) {
+      final a = Map<String, dynamic>.from(authorRaw);
+      final idNest = _stringId(a);
+      if (idNest != null && idNest.isNotEmpty) return idNest;
+    } else if (authorRaw is String) {
+      final idText = _stripObjectIdText(authorRaw);
+      if (idText.isNotEmpty) return idText;
+    }
+    final idFlat = _stringId(
+      m['authorId'] ?? m['author_id'] ?? m['userId'] ?? m['user_id'] ?? m['uid'] ??
+      m['ownerId']  ?? m['owner_id']  ?? m['createdById'] ?? m['created_by_id'] ?? m['postedById']
+    );
+    return idFlat;
   }
 
-  List<Map<String, dynamic>> _filterToSpecificUser(
-    List<Map<String, dynamic>> raw,
-    String uid, {
-    String? username,
-    String? email,
-  }) {
-    final lowUid = uid.toLowerCase();
-    final lowUser = username?.toLowerCase();
-    final lowEmail = email?.toLowerCase();
-
-    return raw.where((m) {
-      final a = _authorTripletFromMap(m);
-      final byId = (a.id?.toLowerCase() == lowUid);
-      final byEmail = lowEmail != null && (a.email?.toLowerCase() == lowEmail);
-      final byUsername = lowUser != null && (a.username?.toLowerCase() == lowUser);
-      return byId || byEmail || byUsername;
-    }).toList();
+  List<Map<String, dynamic>> _filterToUserId(List<Map<String, dynamic>> raw, String uid) {
+    final target = uid.toLowerCase();
+    return raw.where((m) => (_authorIdFromMap(m)?.toLowerCase() == target)).toList();
   }
 
   // ---------- UI / logic ----------
@@ -490,13 +491,50 @@ class _ProfilePageState extends State<ProfilePage> {
         _avatarUrl     = widget.initialAvatarUrl;
       }
 
+      // Resolve target user ID first if we are viewing others without a known id
+      String? targetId = widget.userId?.trim();
+      if ((targetId == null || targetId.isEmpty) && !_isMine) {
+        String q = (_usernameAlias ?? widget.initialUsername ?? widget.initialName ?? '').toString().trim();
+        if (q.startsWith('@')) q = q.substring(1);
+        q = q.replaceAll(RegExp(r"\s+"), " ").trim();
+        if (q.isNotEmpty) {
+          targetId = await _resolveUserIdByQuery(q);
+        }
+      }
+      if (targetId != null && targetId.isNotEmpty) {
+        _resolvedUid = targetId;
+      }
+
       UserProfile u;
-      if (widget.userId != null && widget.userId!.trim().isNotEmpty) {
-        final map = await _db.getUserByObjectIdFiber(widget.userId!.trim());
+      if (targetId != null && targetId.trim().isNotEmpty) {
+        final map = await _db.getUserByObjectIdFiber(targetId.trim());
+        u = UserProfile.fromJson(map);
+      } else if (_isMine) {
+        final map = await _db.getMeFiber();
+        // Save resolved object id (if any) for fetching posts
+        final resolved = _stringId(map['_id'] ?? map['id'] ?? map['oid']);
+        if (resolved != null && resolved.isNotEmpty) {
+          _resolvedUid = resolved;
+        }
         u = UserProfile.fromJson(map);
       } else {
-        final map = await _db.getMeFiber();
-        u = UserProfile.fromJson(map);
+        // Viewing others without resolvable ID — build a minimal profile placeholder
+        final name = (widget.initialName ?? '').trim();
+        String? f;
+        String? l;
+        if (name.isNotEmpty) {
+          final parts = name.split(' ');
+          f = parts.isNotEmpty ? parts.first : null;
+          l = parts.length > 1 ? parts.sublist(1).join(' ') : null;
+        }
+        u = UserProfile(
+          id: null,
+          oid: null,
+          firstName: f,
+          lastName: l,
+          email: null,
+          raw: const {},
+        );
       }
 
       safeSetState(() {
@@ -513,32 +551,224 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  // Resolve user id using search API by username/email/display name
+  Future<String?> _resolveUserIdByQuery(String q) async {
+    try {
+      final res = await _db.searchUsers(q: q, limit: 20, cursor: null);
+      String readId(dynamic v) {
+        if (v is Map && v[r'$oid'] != null) return v[r'$oid'].toString();
+        return v?.toString() ?? '';
+      }
+      for (final m in res.items) {
+        final id = [
+          m['_id'], m['id'], m['user_id'], m['userId'], m['uid'], m['objectId'], m['object_id'], m['profileId'], m['profile_id']
+        ].map(readId).firstWhere((s) => s.trim().isNotEmpty, orElse: () => '');
+        if (id.trim().isNotEmpty) return id.trim();
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _loadPostsFor(UserProfile u) async {
     safeSetState(() { _loadingPosts = true; _postsError = null; _posts.clear(); });
 
     try {
-      List<models.Post> list;
-      if (_isMine) {
-        list = await _fetchMyPostsFast();
-      } else {
-        final uid = (u.oid ?? u.id?.toString() ?? '').trim();
-        list = await _fetchPostsByUserFast(uid);
+      // Show only posts of the profile owner (my posts / target user's posts)
+      final uid = _isMine
+          ? (_stringId(u.oid) ?? _stringId(u.id) ?? u.id?.toString() ?? _resolvedUid ?? '').trim()
+          : (_stringId(u.oid) ?? _stringId(u.id) ?? u.id?.toString() ?? _resolvedUid ?? '').trim();
+      if (uid.isEmpty) {
+        safeSetState(() { _loadingPosts = false; });
+        return;
       }
+
+      // Primary: call user-specific endpoint and filter, auto-fetch a few pages for completeness
+      final first = await _db.getPostsByUser(userId: uid, limit: _pageLimit, cursor: null);
+      List<models.Post> onlyUser = first.items.where((p) => p.userId.trim() == uid).toList();
+      var cur = first.nextCursor;
+      var hops = 1;
+      while (cur != null && hops < _maxPages) {
+        final pg = await _db.getPostsByUser(userId: uid, limit: _pageLimit, cursor: cur);
+        final add = pg.items.where((p) => p.userId.trim() == uid).toList();
+        if (add.isNotEmpty) onlyUser.addAll(add);
+        cur = pg.nextCursor;
+        hops++;
+      }
+      _postsNextCursor = cur;
+      _feedCursor = null;
+
+      // Fallback: if still empty, scan feed pages to collect this user's posts
+      if (onlyUser.isEmpty) {
+        final pair = await _fetchUserPostsFromFeed(uid, cursor: null, desired: _pageLimit);
+        onlyUser = pair.items;
+        _feedCursor = pair.cursor;
+        _postsNextCursor = pair.cursor;
+      }
+
+      // Apply profile owner name to posts
+      final withName = _mapPostsWithProfileName(onlyUser, owner: u);
 
       if (!mounted) return;
       safeSetState(() {
-        _posts.addAll(list);
+        _posts.addAll(withName);
         _loadingPosts = false;
       });
-
-      _primeCountsFromPosts(list);
-      safeSetState(() {});
+      _primeCountsFromPosts(withName);
     } catch (e) {
       safeSetState(() {
         _postsError = e.toString();
         _loadingPosts = false;
       });
     }
+  }
+
+  // Scan /posts/feed pages and collect only posts of a specific user
+  Future<({List<models.Post> items, String? cursor})> _fetchUserPostsFromFeed(
+    String uid, {
+    String? cursor,
+    int desired = 20,
+    int maxHops = 12,
+  }) async {
+    final out = <models.Post>[];
+    var cur = cursor;
+    var hops = 0;
+    while (hops < maxHops) {
+      hops++;
+      final page = await _db.getFeed(limit: _pageLimit, cursor: cur, sort: 'time');
+      final filtered = page.items.where((p) => p.userId.trim() == uid).toList();
+      out.addAll(filtered);
+      if (out.length >= desired || page.nextCursor == null) {
+        return (items: out, cursor: page.nextCursor);
+      }
+      cur = page.nextCursor;
+    }
+    return (items: out, cursor: cur);
+  }
+
+  Future<void> _loadMorePosts() async {
+    if (_postsFetchingMore) return;
+    final uid = (_stringId(_user?.oid) ?? _stringId(_user?.id) ?? _user?.id?.toString() ?? _resolvedUid ?? '').trim();
+    if (uid.isEmpty) return;
+    safeSetState(() { _postsFetchingMore = true; });
+    try {
+      if ((_postsNextCursor ?? '').isNotEmpty) {
+        final page = await _db.getPostsByUser(userId: uid, limit: _pageLimit, cursor: _postsNextCursor);
+        final onlyUser = page.items.where((p) => p.userId.trim() == uid).toList();
+        final withName = _mapPostsWithProfileName(onlyUser, owner: _user);
+        if (!mounted) return;
+        safeSetState(() {
+          _posts.addAll(withName);
+          _postsNextCursor = page.nextCursor;
+          _postsFetchingMore = false;
+        });
+        _primeCountsFromPosts(withName);
+        return;
+      }
+
+      if ((_feedCursor ?? '').isNotEmpty) {
+        final pair = await _fetchUserPostsFromFeed(uid, cursor: _feedCursor, desired: _pageLimit);
+        final withName = _mapPostsWithProfileName(pair.items, owner: _user);
+        if (!mounted) return;
+        safeSetState(() {
+          _posts.addAll(withName);
+          _feedCursor = pair.cursor;
+          _postsFetchingMore = false;
+        });
+        _primeCountsFromPosts(withName);
+        return;
+      }
+
+      safeSetState(() { _postsFetchingMore = false; });
+    } catch (_) {
+      if (!mounted) return;
+      safeSetState(() { _postsFetchingMore = false; });
+    }
+  }
+
+  // Map posts so that username displays the owner's name for consistency
+  List<models.Post> _mapPostsWithProfileName(List<models.Post> list, {UserProfile? owner}) {
+    final o = owner ?? _user;
+    if (o == null) return list;
+    String display() {
+      final f = (o.firstName ?? '').trim();
+      final l = (o.lastName ?? '').trim();
+      final full = [f, l].where((s) => s.isNotEmpty).join(' ').trim();
+      if (full.isNotEmpty) return full;
+      final alias = (_usernameAlias ?? '').trim();
+      if (alias.isNotEmpty) return alias;
+      final email = (o.email ?? '').trim();
+      if (email.contains('@')) return email.split('@').first;
+      return '';
+    }
+    final name = display();
+    if (name.isEmpty) return list;
+    return list.map((p) => models.Post(
+      id: p.id,
+      userId: p.userId,
+      profilePic: p.profilePic,
+      username: name,
+      category: p.category,
+      message: p.message,
+      likeCount: p.likeCount,
+      comment: p.comment,
+      isLiked: p.isLiked,
+      authorRoles: p.authorRoles,
+      visibilityRoles: p.visibilityRoles,
+      timeStamp: p.timeStamp,
+      picture: p.picture,
+      video: p.video,
+      images: p.images,
+      videos: p.videos,
+    )).toList();
+  }
+
+  // Quick fetch: only first page of likely endpoints
+  Future<List<models.Post>> _fetchMyPostsQuick() async {
+    final base = AuthService.I.apiBase.endsWith('/')
+        ? AuthService.I.apiBase.substring(0, AuthService.I.apiBase.length - 1)
+        : AuthService.I.apiBase;
+
+    final me = await _db.getMeFiber();
+    final String? myId = _stringId(me['_id'] ?? me['id'] ?? me['oid']);
+    if (myId == null || myId.isEmpty) return const <models.Post>[];
+
+    final quickUris = <Uri>[
+      Uri.parse('$base/posts?user_id=$myId&limit=$_pageLimit&sort=-createdAt'),
+      Uri.parse('$base/users/me/posts'),
+      Uri.parse('$base/posts/mine'),
+    ];
+    for (final u in quickUris) {
+      try {
+        final raw = await _getPagedRaw(u, firstPageOnly: true);
+        if (raw.isEmpty) continue;
+        final sorted = _sortNewestFirst(raw);
+        return sorted.map((e) => models.Post.fromJson(e)).toList();
+      } catch (_) {}
+    }
+    return const <models.Post>[];
+  }
+
+  Future<List<models.Post>> _fetchPostsByUserQuick(String userId) async {
+    final uid = userId.trim();
+    final base = AuthService.I.apiBase.endsWith('/')
+        ? AuthService.I.apiBase.substring(0, AuthService.I.apiBase.length - 1)
+        : AuthService.I.apiBase;
+    final uris = <Uri>[
+      if (uid.isNotEmpty) Uri.parse('$base/posts?user_id=$uid&limit=$_pageLimit&sort=-createdAt'),
+      if (uid.isNotEmpty) Uri.parse('$base/users/profile/${Uri.encodeComponent(uid)}/posts'),
+      if (uid.isNotEmpty) Uri.parse('$base/users/${Uri.encodeComponent(uid)}/posts'),
+    ];
+    for (final u in uris) {
+      try {
+        final raw = await _getPagedRaw(u, firstPageOnly: true);
+        if (raw.isEmpty) continue;
+        final filtered = _filterToUserId(raw, uid);
+        if (filtered.isEmpty) continue;
+        final sorted = _sortNewestFirst(filtered);
+        return sorted.map((e) => models.Post.fromJson(e)).toList();
+      } catch (_) {}
+    }
+    return const <models.Post>[];
   }
 
   // ====== ดึง "เฉพาะโพสต์ของฉัน" — QUICK + FILTER ======
@@ -569,12 +799,16 @@ class _ProfilePageState extends State<ProfilePage> {
 
     for (final u in quickUris) {
       try {
-        final raw = await _getPagedRaw(u, firstPageOnly: true);
+        // Fetch all available pages for this endpoint to avoid truncation
+        final raw = await _getPagedRaw(u);
         if (raw.isEmpty) continue;
-        final filtered = _filterToMineRaw(raw, myId: myId, myEmail: myEmail, myUsername: myUsername);
+        final filtered = _filterToUserId(raw, myId);
         if (filtered.isNotEmpty) {
           final sorted = _sortNewestFirst(filtered);
-          return sorted.map((e) => models.Post.fromJson(e)).toList();
+          final fromApis = sorted.map((e) => models.Post.fromJson(e)).toList();
+          // Complement with DB scan to ensure completeness
+          final fromDb = await _fetchPostsByUserFromDbLoop(myId);
+          return _mergeAndSortPosts(fromApis, fromDb);
         }
       } catch (_) {}
     }
@@ -610,7 +844,7 @@ class _ProfilePageState extends State<ProfilePage> {
         try {
           final raw = await _getPagedRaw(v);
           if (raw.isEmpty) continue;
-          final filtered = _filterToMineRaw(raw, myId: myId, myEmail: myEmail, myUsername: myUsername);
+          final filtered = _filterToUserId(raw, myId);
           if (filtered.isEmpty) continue;
 
           for (final m in filtered) {
@@ -633,7 +867,7 @@ class _ProfilePageState extends State<ProfilePage> {
       try {
         final v = _withQuery(Uri.parse('$base/posts'), {'sort': 'createdAt:desc'});
         final raw = await _getPagedRaw(v);
-        final mine = _filterToMineRaw(raw, myId: myId, myEmail: myEmail, myUsername: myUsername);
+        final mine = _filterToUserId(raw, myId);
         for (final m in mine) {
           final id = (m['_id'] ?? m['id'] ?? m['oid'])?.toString() ?? jsonEncode(m);
           if (seen.add(id)) collected.add(m);
@@ -642,29 +876,62 @@ class _ProfilePageState extends State<ProfilePage> {
       } catch (_) {}
     }
 
-    if (collected.isEmpty) return const <models.Post>[];
+    if (collected.isEmpty) {
+      // Full DB scan fallback
+      return _fetchPostsByUserFromDbLoop(myId);
+    }
     final sorted = _sortNewestFirst(collected);
-    return sorted.map((e) => models.Post.fromJson(e)).toList();
+    final fromApis = sorted.map((e) => models.Post.fromJson(e)).toList();
+    final fromDb = await _fetchPostsByUserFromDbLoop(myId);
+    return _mergeAndSortPosts(fromApis, fromDb);
   }
 
   // ====== ดึงโพสต์ของ user เป้าหมาย — FAST + FILTER ======
   Future<List<models.Post>> _fetchPostsByUserFast(String userId) async {
     final uid = userId.trim();
-    if (uid.isEmpty) return const <models.Post>[];
+    if (uid.isEmpty) {
+      return const <models.Post>[];
+    }
 
     final base = AuthService.I.apiBase.endsWith('/')
         ? AuthService.I.apiBase.substring(0, AuthService.I.apiBase.length - 1)
         : AuthService.I.apiBase;
+
+    // 0) SUPER-FAST PATH — query params we trust; don't over-filter
+    Future<List<models.Post>> _tryDirectParams() async {
+      final direct = <Uri>[
+        Uri.parse('$base/posts?user_id=$uid'),
+        Uri.parse('$base/posts?userId=$uid'),
+        Uri.parse('$base/posts?author_id=$uid'),
+        Uri.parse('$base/posts?authorId=$uid'),
+      ];
+      final out = <Map<String, dynamic>>[];
+      final seen = <String>{};
+      for (final u in direct) {
+        try {
+          final raw = await _getPagedRaw(u, firstPageOnly: true);
+          for (final m in raw) {
+            final id = (m['_id'] ?? m['id'] ?? m['oid'])?.toString() ?? jsonEncode(m);
+            if (seen.add(id)) out.add(m);
+          }
+        } catch (_) {}
+      }
+      if (out.isEmpty) return const <models.Post>[];
+      final filtered = _filterToUserId(out, uid);
+      if (filtered.isEmpty) return const <models.Post>[];
+      final sorted = _sortNewestFirst(filtered);
+      return sorted.map((e) => models.Post.fromJson(e)).toList();
+    }
+
+    final directHits = await _tryDirectParams();
+    if (directHits.isNotEmpty) return directHits;
 
     final preferUser = <Uri>[
       Uri.parse('$base/users/profile/${Uri.encodeComponent(uid)}/posts'),
       Uri.parse('$base/users/${Uri.encodeComponent(uid)}/posts'),
       Uri.parse('$base/posts/user/${Uri.encodeComponent(uid)}'),
       Uri.parse('$base/posts?user=$uid'),
-      Uri.parse('$base/posts?user_id=$uid'),
-      Uri.parse('$base/posts?userId=$uid'),
-      Uri.parse('$base/posts?authorId=$uid'),
-      Uri.parse('$base/posts?author_id=$uid'),
+      // the query-param variants above were already tried without filtering; keep others here
       Uri.parse('$base/posts?author=$uid'),
       Uri.parse('$base/posts?who=$uid'),
     ];
@@ -682,10 +949,10 @@ class _ProfilePageState extends State<ProfilePage> {
       ];
       for (final v in candidates) {
         try {
-          final raw = await _getPagedRaw(v, firstPageOnly: true);
+          // Fetch across pages/cursors for full history
+          final raw = await _getPagedRaw(v);
           if (raw.isEmpty) continue;
-
-          final filtered = _filterToSpecificUser(raw, uid);
+          final filtered = _filterToUserId(raw, uid);
           if (filtered.isEmpty) continue;
 
           for (final m in filtered) {
@@ -708,7 +975,7 @@ class _ProfilePageState extends State<ProfilePage> {
       try {
         final v = _withQuery(Uri.parse('$base/posts'), {'sort': 'createdAt:desc'});
         final raw = await _getPagedRaw(v);
-        final filtered = _filterToSpecificUser(raw, uid);
+        final filtered = _filterToUserId(raw, uid);
         for (final m in filtered) {
           final id = (m['_id'] ?? m['id'] ?? m['oid'])?.toString() ?? jsonEncode(m);
           if (seen.add(id)) collected.add(m);
@@ -717,9 +984,48 @@ class _ProfilePageState extends State<ProfilePage> {
       } catch (_) {}
     }
 
-    if (collected.isEmpty) return const <models.Post>[];
+    if (collected.isEmpty) {
+      // Full DB scan fallback
+      return _fetchPostsByUserFromDbLoop(uid);
+    }
     final sorted = _sortNewestFirst(collected);
-    return sorted.map((e) => models.Post.fromJson(e)).toList();
+    final fromApis = sorted.map((e) => models.Post.fromJson(e)).toList();
+    final fromDb = await _fetchPostsByUserFromDbLoop(uid);
+    return _mergeAndSortPosts(fromApis, fromDb);
+  }
+
+  // -------- Fallback: scan /posts via DatabaseService and filter by user id --------
+  Future<List<models.Post>> _fetchPostsByUserFromDbLoop(String uid) async {
+    final out = <models.Post>[];
+    final seen = <String>{};
+    String? cursor;
+    int hops = 0;
+    const int maxHops = 12; // speed: scan fewer pages on fallback
+    while (true) {
+      hops++;
+      final page = await _db.getPosts(limit: _pageLimit, cursor: cursor);
+      final matched = page.items.where((p) => p.userId.trim() == uid).toList();
+      for (final p in matched) {
+        if (seen.add(p.id)) out.add(p);
+        if (out.length >= _hardCapItems) break;
+      }
+      if (out.length >= _hardCapItems) break;
+      cursor = page.nextCursor;
+      if (cursor == null || hops >= maxHops) break;
+    }
+    out.sort((a, b) => b.timeStamp.compareTo(a.timeStamp));
+    return out;
+  }
+
+  List<models.Post> _mergeAndSortPosts(List<models.Post> a, List<models.Post> b) {
+    final seen = <String>{};
+    final out = <models.Post>[];
+    for (final p in [...a, ...b]) {
+      if (seen.add(p.id)) out.add(p);
+      if (out.length >= _hardCapItems) break;
+    }
+    out.sort((x, y) => y.timeStamp.compareTo(x.timeStamp));
+    return out;
   }
 
   // ---------- helpers ----------
@@ -926,7 +1232,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Center(child: Text('No posts yet', style: TextStyle(color: Colors.grey))),
               ),
             )
-          else
+          else ...[
             SliverList.builder(
               itemCount: _posts.length,
               itemBuilder: (context, i) {
@@ -952,6 +1258,27 @@ class _ProfilePageState extends State<ProfilePage> {
                 );
               },
             ),
+            if (_postsFetchingMore)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              )
+            else if (_feedCursor != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: _loadMorePosts,
+                      child: const Text('Load more posts'),
+                    ),
+                  ),
+                ),
+              ),
+          ],
           const SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],
       ),
@@ -959,7 +1286,10 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildProfileHeaderCard(BuildContext context) {
-    final profileId = _user?.oid ?? _user?.id?.toString() ?? '—';
+    final studentId = (() {
+      final s = (_user?.studentId ?? '').toString().trim();
+      return s.isNotEmpty ? s : '—';
+    })();
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -970,7 +1300,7 @@ class _ProfilePageState extends State<ProfilePage> {
         boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 4))],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, _isMine ? 20 : 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -1019,96 +1349,116 @@ class _ProfilePageState extends State<ProfilePage> {
                           color: _green900,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.alternate_email, size: 16, color: Colors.black54),
-                          const SizedBox(width: 6),
-                          Text(_displayUsername, style: const TextStyle(fontSize: 14, color: Colors.black87)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.phone_iphone, size: 16, color: Colors.black54),
-                          const SizedBox(width: 6),
-                          Text(_phoneNumber?.trim().isNotEmpty == true ? _phoneNumber! : '—',
-                              style: const TextStyle(fontSize: 14, color: Colors.black87)),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.email_outlined, size: 16, color: Colors.black54),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              _user?.email ?? '—',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 13, color: Colors.black87),
+                      // Removed username row per request
+                      if (_isMine) ...[
+                        const SizedBox(height: 4),
+                        // Student ID above phone number
+                        Row(
+                          children: [
+                            const Icon(Icons.badge_outlined, size: 16, color: Colors.black54),
+                            const SizedBox(width: 6),
+                            Text(
+                              (_user?.studentId ?? '').trim().isNotEmpty
+                                  ? (_user!.studentId!)
+                                  : '—',
+                              style: const TextStyle(fontSize: 14, color: Colors.black87),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(Icons.phone_iphone, size: 16, color: Colors.black54),
+                            const SizedBox(width: 6),
+                            Text(
+                              _phoneNumber?.trim().isNotEmpty == true ? _phoneNumber! : '—',
+                              style: const TextStyle(fontSize: 14, color: Colors.black87),
+                            ),
+                          ],
+                        ),
+                        // adviser row removed per request
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(Icons.email_outlined, size: 16, color: Colors.black54),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _user?.email ?? '—',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 15, color: Colors.black87),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if ((_advisorEmail ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Icon(Icons.school_outlined, size: 16, color: Colors.black54),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'adviser  ${_advisorEmail!}',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 15, color: Colors.black87),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
-                      ),
+                      ],
                     ],
                   ),
                 ),
                 if (_isMine)
                   IconButton(
-                    tooltip: 'Edit username & phone',
+                    tooltip: 'Edit phone number',
                     onPressed: _openEditUsernamePhoneSheet,
                     icon: const Icon(Icons.edit_note, color: Colors.black87),
                   ),
               ],
             ),
 
-            const SizedBox(height: 12),
-            const Divider(height: 0, color: Color(0xFFE3F0E6)),
-            const SizedBox(height: 8),
+            if (_isMine) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 0, color: Color(0xFFE3F0E6)),
+              const SizedBox(height: 8),
 
-            Row(
-              children: [
-                Expanded(child: _kvTile('User ID', profileId)),
-                const SizedBox(width: 8),
-                Expanded(child: _kvTile('First name', (_user?.firstName ?? '—'))),
-                const SizedBox(width: 8),
-                Expanded(child: _kvTile('Last name', (_user?.lastName ?? '—'))),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.medical_information_outlined),
-                    label: const Text('Health'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _green900,
-                      side: BorderSide(color: _green400),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+              // Action buttons (mine only)
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.medical_information_outlined),
+                      label: const Text('Health'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _green900,
+                        side: BorderSide(color: _green400),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _openAllergies,
                     ),
-                    onPressed: _openAllergies,
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.badge_outlined),
-                    label: const Text('Roles'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _green900,
-                      side: BorderSide(color: _green400),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.badge_outlined),
+                      label: const Text('Roles'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _green900,
+                        side: BorderSide(color: _green400),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _openRoles,
                     ),
-                    onPressed: _openRoles,
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -1184,12 +1534,30 @@ class _ProfilePageState extends State<ProfilePage> {
     return null;
   }
 
-  // -------- Edit username + phone --------
+  // Adviser email helper (reads from multiple possible keys)
+  String? get _advisorEmail {
+    final raw = _user?.raw ?? const <String, dynamic>{};
+    String? pick(List<String> keys) {
+      for (final k in keys) {
+        final v = raw[k];
+        if (v == null) continue;
+        final s = v.toString().trim();
+        if (s.isNotEmpty) return s;
+      }
+      return null;
+    }
+    final viaKey = pick(['advisor_email','advisorEmail','advisor_mail','advisor']);
+    if (viaKey != null && viaKey.contains('@')) return viaKey;
+    final id = (_user?.advisorId ?? '').trim();
+    if (id.contains('@')) return id;
+    return null;
+  }
+
+  // -------- Edit phone only --------
   Future<void> _openEditUsernamePhoneSheet() async {
     if (!_isMine) return;
 
-    final usernameCtrl = TextEditingController(text: _usernameAlias ?? _deriveLocalFromEmail());
-    final phoneCtrl    = TextEditingController(text: _phoneNumber ?? '');
+    final phoneCtrl = TextEditingController(text: _phoneNumber ?? '');
 
     final result = await showModalBottomSheet<Map<String, String>>(
       context: context,
@@ -1211,16 +1579,7 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Edit Username & Phone', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: usernameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Username',
-                      prefixText: '@',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  const Text('Edit Phone Number', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 12),
                   TextField(
                     controller: phoneCtrl,
@@ -1245,7 +1604,6 @@ class _ProfilePageState extends State<ProfilePage> {
                           style: ElevatedButton.styleFrom(backgroundColor: _green700, foregroundColor: Colors.white),
                           onPressed: () {
                             Navigator.pop(ctx, {
-                              'username': usernameCtrl.text.trim(),
                               'phone': phoneCtrl.text.trim(),
                             });
                           },
@@ -1265,7 +1623,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (result == null) return;
 
     await _saveProfileChanges(
-      username: result['username'] ?? (_usernameAlias ?? ''),
+      username: _usernameAlias ?? _deriveLocalFromEmail(),
       phone: result['phone'] ?? (_phoneNumber ?? ''),
       avatarUrl: '',
     );
@@ -1377,15 +1735,20 @@ class _ProfilePageState extends State<ProfilePage> {
       extra: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
     );
 
+    // Try minimal telephone-only first to avoid validation on username/avatar
     final payloadVariants = <Map<String, dynamic>>[
+      {'telephone': phone},
+      // Common payloads used by different backends
       {'username': username, 'phone': phone, 'avatarUrl': avatarUrl},
       {'userName': username, 'phoneNumber': phone, 'photoUrl': avatarUrl},
       {'alias': username, 'mobile': phone, 'avatar': avatarUrl},
     ];
 
     final endpoints = <Uri>[
+      Uri.parse('$base/users/myprofile'),
       Uri.parse('$base/users/me'),
       Uri.parse('$base/users/profile/me'),
+      Uri.parse('$base/profile/me'),
       Uri.parse('$base/profile'),
     ];
 
@@ -1405,6 +1768,18 @@ class _ProfilePageState extends State<ProfilePage> {
         } catch (_) {}
       }
       if (ok) break;
+    }
+
+    // Feedback toast
+    if (mounted) {
+      final m = ScaffoldMessenger.maybeOf(context);
+      m?.hideCurrentSnackBar();
+      m?.showSnackBar(
+        SnackBar(
+          content: Text(ok ? 'Phone number updated' : 'Failed to update phone number'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
 
     if (!mounted) return;

@@ -535,6 +535,97 @@ class DatabaseService {
   }
 
   // ---------- Users ----------
+  // Search users by query string. Returns raw user maps for flexible UI mapping.
+  Future<PagedResult<Map<String, dynamic>>> searchUsers({
+    required String q,
+    int limit = 20,
+    String? cursor,
+  }) async {
+    // Primary attempt: /users/search
+    Future<PagedResult<Map<String, dynamic>>> _fromEndpoint(String path) async {
+      final uri = _buildUri(path, {
+        'q': q,
+        'limit': '$limit',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      });
+      final res = await _get(uri, extra: const {'Accept': 'application/json'});
+      if (res.statusCode != 200) {
+        throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
+      }
+      final body = res.body.trim();
+      if (body.isEmpty) return const PagedResult(items: <Map<String, dynamic>>[], nextCursor: null);
+
+      final parsed = jsonDecode(body);
+      List<dynamic> list;
+      String? next;
+      if (parsed is List) {
+        list = parsed;
+        next = null;
+      } else if (parsed is Map<String, dynamic>) {
+        list = (parsed['items'] ?? parsed['data'] ?? parsed['users'] ?? parsed['rows']) as List<dynamic>? ?? const [];
+        next = (parsed['next_cursor'] ?? parsed['NextCursor'] ?? parsed['nextCursor'] ?? parsed['next'])?.toString();
+      } else {
+        list = const [];
+        next = null;
+      }
+      final items = list
+          .whereType<Map<String, dynamic>>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      return PagedResult(items: items, nextCursor: next);
+    }
+
+    // Fallback from posts: derive unique authors matching query
+    Future<PagedResult<Map<String, dynamic>>> _fromPosts() async {
+      final lower = q.trim().toLowerCase();
+      final seen = <String>{};
+      final out = <Map<String, dynamic>>[];
+      String? cur;
+      var hops = 0;
+      const maxHops = 4; // cap network
+      while (true) {
+        hops++;
+        final page = await getPosts(limit: 30, cursor: cur);
+        for (final p in page.items) {
+          bool contains(String v) => v.toLowerCase().contains(lower);
+          final matches = lower.isEmpty ||
+              contains(p.username) ||
+              contains(p.message) ||
+              contains(p.category) ||
+              p.authorRoles.any(contains);
+          final uid = p.userId.trim();
+          if (matches && uid.isNotEmpty && seen.add(uid)) {
+            out.add({
+              '_id': uid,
+              'username': p.username,
+              'profile_pic': p.profilePic,
+              'roles': p.authorRoles,
+            });
+            if (out.length >= limit) break;
+          }
+        }
+        if (out.length >= limit) break;
+        cur = page.nextCursor;
+        if (cur == null || hops >= maxHops) break;
+      }
+      return PagedResult(items: out, nextCursor: null);
+    }
+
+    // Try known endpoints; if all fail or return empty, fallback to posts
+    const endpoints = <String>['/users/search', '/search/users', '/users'];
+    for (final ep in endpoints) {
+      try {
+        final r = await _fromEndpoint(ep);
+        if (r.items.isNotEmpty || r.nextCursor != null) {
+          return r;
+        }
+      } catch (_) {
+        // try next
+      }
+    }
+    return _fromPosts();
+  }
+
   Future<Map<String, dynamic>> getMeFiber() async {
     final uri = _buildUri('/users/myprofile', {});
 

@@ -1,22 +1,69 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
+import '../services/auth_service.dart';
 
 class HeaderSection extends StatelessWidget {
   final VoidCallback? onAvatarTap;
   final VoidCallback? onSettingsTap;
   final bool greenBackground; // use green header like Events
   final String? greetingName; // shows "Hi, {name}!" next to avatar
+  final String? avatarUrl;    // actual user avatar if provided
+  // When true: show only a centered logo (no texts), used for Home header per request
+  final bool centerLogoOnly;
   const HeaderSection({
     super.key,
     this.onAvatarTap,
     this.onSettingsTap,
     this.greenBackground = false,
     this.greetingName,
+    this.avatarUrl,
+    this.centerLogoOnly = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+
+    // Simple centered-logo header (no texts)
+    if (centerLogoOnly) {
+      final logo = SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Try ourlogo.png first; fallback to KU.png if missing
+              Image.asset(
+                'assets/images/ourlogo.png',
+                height: 50,
+                fit: BoxFit.contain,
+                errorBuilder: (ctx, err, stack) => Image.asset(
+                  'assets/images/KU.png',
+                  height: 50,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (!greenBackground) return logo;
+
+      const headerG1 = Color(0xFF7E9766);
+      const headerG2 = Color(0xFF7E9766);
+      return Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [headerG1, headerG2]),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [logo, const SizedBox(height: 6)],
+        ),
+      );
+    }
 
     final content = SafeArea(
       bottom: false,
@@ -35,13 +82,10 @@ class HeaderSection extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Profile picture
+                      // Profile picture (real avatar when available)
                       GestureDetector(
                         onTap: onAvatarTap,
-                        child: const CircleAvatar(
-                          radius: 20,
-                          backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=3'),
-                        ),
+                        child: _HeaderAvatar(url: avatarUrl),
                       ),
                       const SizedBox(width: 8),
                       // Texts stacked to the right of avatar
@@ -79,7 +123,7 @@ class HeaderSection extends StatelessWidget {
                                     ),
                                   ),
                                   TextSpan(
-                                    text: 'COM👋 ',
+                                    text: 'COM',
                                     style: TextStyle(
                                       color: greenBackground ? const Color(0xFFF1F4EA) : AppColors.sage,
                                       fontWeight: FontWeight.w800,
@@ -150,6 +194,31 @@ class HeaderSection extends StatelessWidget {
           const SizedBox(height: 6), // tighter bottom space within green area
         ],
       ),
+    );
+  }
+}
+
+class _HeaderAvatar extends StatelessWidget {
+  final String? url;
+  const _HeaderAvatar({this.url});
+
+  ImageProvider? _providerFrom(String? src) {
+    final s = (src ?? '').trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('assets/')) return AssetImage(s);
+    if (s.startsWith('http://') || s.startsWith('https://')) return NetworkImage(s);
+    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = _providerFrom(url);
+    return CircleAvatar(
+      radius: 20,
+      backgroundImage: prov,
+      child: prov == null ? const Icon(Icons.person, color: Colors.white) : null,
+      backgroundColor: AppColors.sage.withOpacity(.4),
     );
   }
 }
