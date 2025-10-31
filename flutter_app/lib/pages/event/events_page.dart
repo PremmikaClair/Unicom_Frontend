@@ -256,7 +256,8 @@ class _EventsPageState extends State<EventsPage> {
   bool get _canManageEvents => CurrentUser.roles.any((r) => kEventManagerRoles.contains(r));
 
   void _goCreateEvent() {
-    Navigator.of(context).push(
+    // เปิดหน้า CreateEvent แบบเต็มจอ ไม่อยู่ใต้ AppShell (ไม่มี bottom nav)
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => const CreateEventPage()),
     );
   }
@@ -302,7 +303,8 @@ class _EventsPageState extends State<EventsPage> {
 
     final showFab = _canCreate || _canManage;
     return Scaffold(
-      backgroundColor: headerG1,
+      // ให้พื้นหลังทั้งหน้ากลับเป็นสีปกติ (เขียวเฉพาะส่วนหัวเท่านั้น)
+      backgroundColor: Colors.white,
 
       body: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
@@ -857,7 +859,8 @@ class _FabMenuState extends State<_FabMenu> with SingleTickerProviderStateMixin 
       children: [
         // พื้นที่ปล่อยปุ่มย่อย
         Padding(
-          padding: const EdgeInsets.only(right: 16, bottom: 16),
+          // ยกตำแหน่งปุ่มเมนูย่อยขึ้นเหนือ AppShell bottom bar
+          padding: const EdgeInsets.only(right: 16, bottom: 86),
           child: SizedBox(
             width: 180,
             height: 180,
@@ -970,7 +973,8 @@ class _FabMenuState extends State<_FabMenu> with SingleTickerProviderStateMixin 
 
         // ปุ่มหลัก (+)
         Padding(
-          padding: const EdgeInsets.only(right: 16, bottom: 16),
+          // ยกตำแหน่งปุ่ม + ขึ้นเหนือ AppShell bottom bar
+          padding: const EdgeInsets.only(right: 16, bottom: 86),
           child: FloatingActionButton(
             backgroundColor: widget.mainColor,
             shape: const CircleBorder(),

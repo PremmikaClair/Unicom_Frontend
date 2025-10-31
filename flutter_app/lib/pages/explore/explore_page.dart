@@ -113,7 +113,8 @@ class _ExplorePageState extends State<ExplorePage> {
     const ctlRadius = 24.0;
 
     return Scaffold(
-      backgroundColor: headerG,
+      // ใช้สีพื้นปกติ ให้ส่วนเขียวอยู่แค่หัวกระดาษ
+      backgroundColor: Colors.white,
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           // Green header
