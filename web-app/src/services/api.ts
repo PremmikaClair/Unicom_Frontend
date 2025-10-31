@@ -659,6 +659,7 @@ function mapEvent(row: any): EventDoc {
 export async function listEvents(): Promise<EventDoc[]> {
   const rows = await apiFetch<any>(`/event`).catch(() => [] as any);
   const list = Array.isArray(rows) ? rows : (Array.isArray(rows?.data) ? rows.data : []);
+  console.log(rows);
   return list.map(mapEvent);
 }
 
