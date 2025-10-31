@@ -44,7 +44,9 @@ class _EventsPageState extends State<EventsPage> {
     _future = _fetchEventsFiber();
     _loadPendingRequests();
     _loadEventAbilities();
+    _loadUnreadNoti(); // << โหลดสถานะแจ้งเตือน
   }
+
 
   Future<List<_EventVM>> _fetchEventsFiber() async {
     final db = DatabaseService();
@@ -123,9 +125,26 @@ class _EventsPageState extends State<EventsPage> {
     });
     await Future.wait([
       _future,
-      _loadEventAbilities(), // recheck permissions on refresh
+      _loadEventAbilities(),
+      _loadUnreadNoti(), // << รีเช็กสถานะแจ้งเตือน
     ]);
   }
+
+
+  bool _hasUnreadNoti = false; // << จุดแดง
+
+  Future<void> _loadUnreadNoti() async {
+    try {
+      final db = DatabaseService();
+      final list = await db.getUnreadNotificationsFiber();
+      if (!mounted) return;
+      setState(() => _hasUnreadNoti = list.isNotEmpty);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _hasUnreadNoti = false);
+    }
+  }
+
 
   Future<void> _loadPendingRequests() async {
     // TODO: เปลี่ยนเป็นเรียก API จริง เช่น GET /requests?status=pending&countOnly=true
@@ -238,11 +257,15 @@ class _EventsPageState extends State<EventsPage> {
   }
 
   // ✅ นำทางไปหน้า Notifications
-  void _goNotifications() {
-    Navigator.of(context).push(
+  void _goNotifications() async {
+    await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const NotificationsPage()),
     );
+    if (mounted) {
+      _loadUnreadNoti(); // << กลับมาแล้วรีเฟรชจุดแดง
+    }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -348,18 +371,38 @@ class _EventsPageState extends State<EventsPage> {
                           ),
 
                           // Notification มุมขวาบน
-                          Positioned(
-                            right: 0,
-                            top: -8,
-                            child: IconButton(
-                              tooltip: 'Notifications',
-                              onPressed: _goNotifications,
-                              icon: const Icon(Icons.notifications_rounded),
-                              color: const Color(0xFFF1F4EA),
-                              iconSize: 26,
-                              splashRadius: 22,
+                            Positioned(
+                              right: 0,
+                              top: -8,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Notifications',
+                                    onPressed: _goNotifications,
+                                    icon: const Icon(Icons.notifications_rounded),
+                                    color: const Color(0xFFF1F4EA),
+                                    iconSize: 26,
+                                    splashRadius: 22,
+                                  ),
+                                  if (_hasUnreadNoti)
+                                    Positioned(
+                                      right: 13,  // ปรับตำแหน่งได้ตามใจ
+                                      top: 13,
+                                      child: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: Colors.white, width: 1.5),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
+
                         ],
                       ),
                     ),

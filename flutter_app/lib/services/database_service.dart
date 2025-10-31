@@ -284,6 +284,53 @@ class DatabaseService {
     return PagedResult(items: list, nextCursor: null);
   }
 
+    // ---------- Notifications ----------
+  // GET /notifications/ -> คืนรายการ "ยังไม่อ่าน" (array)
+  Future<List<Map<String, dynamic>>> getUnreadNotificationsFiber() async {
+    final uri = _buildUri('/notifications/', {});
+    final res = await _get(uri, extra: const {'Accept': 'application/json'});
+    if (res.statusCode != 200) {
+      throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
+    }
+
+    final body = res.body.trim();
+    if (body.isEmpty) return const <Map<String, dynamic>>[];
+
+    final parsed = jsonDecode(body);
+    final List<dynamic> list;
+    if (parsed is List) {
+      list = parsed;
+    } else if (parsed is Map<String, dynamic>) {
+      list = (parsed['items'] ?? parsed['data'] ?? parsed['rows'] ?? const []) as List<dynamic>;
+    } else {
+      return const <Map<String, dynamic>>[];
+    }
+
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  // GET /notifications/:id -> คืน noti เดี่ยว และ mark อ่านในตัว
+  Future<Map<String, dynamic>?> getNotificationAndMarkReadFiber(String id) async {
+    final uri = _buildUri('/notifications/${Uri.encodeComponent(id)}', {});
+    final res = await _get(uri, extra: const {'Accept': 'application/json'});
+
+    // บางเคส backend อาจส่ง 404 ถ้าหมดอายุ/ไม่พบ -> คืน null แทน throw
+    if (res.statusCode != 200) return null;
+
+    final body = res.body.trim();
+    if (body.isEmpty) return <String, dynamic>{};
+
+    final parsed = jsonDecode(body);
+    if (parsed is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(parsed);
+    }
+    return <String, dynamic>{};
+  }
+
+
   Future<PagedResult<T>> _getPaged<T>(
       Uri uri, T Function(Map<String, dynamic>) fromJson) async {
     // log ให้เห็นชัด ๆ
