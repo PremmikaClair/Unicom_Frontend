@@ -2,19 +2,20 @@
 import 'package:flutter/material.dart';
 
 import '../components/app_colors.dart';
-import '../components/header_section.dart';
+// import '../components/header_section.dart'; // no longer used for Home header
 import '../components/post_card.dart';
 import '../models/post.dart';
 import 'profile/profile_page.dart';
 import 'post_detail.dart';
 import '../services/database_service.dart';
+import '../services/auth_service.dart';
 import '../models/event.dart';
 import 'event/event_details_page.dart';
 import 'explore/hashtag_feed_page.dart';
 
 import '../components/filter_pill.dart';
 import '../components/filter_sheet.dart';
-
+import '../components/header_section.dart';
 import '../controllers/like_controller.dart';
 
 class HomePage extends StatefulWidget {
@@ -49,6 +50,8 @@ class _HomePageState extends State<HomePage> {
 
   // Greeting
   String? _firstName;
+  String? _username; // for header (to right of avatar)
+  String? _avatarUrl;
 
   // Scrollers
   final _scroll = ScrollController();
@@ -220,8 +223,17 @@ class _HomePageState extends State<HomePage> {
       final f = (me['firstname'] ?? me['firstName'] ?? '').toString().trim();
       final l = (me['lastname'] ?? me['lastName'] ?? '').toString().trim();
       final full = [f, l].where((s) => s.isNotEmpty).join(' ').trim();
+
+      final uname = (me['username'] ?? me['userName'] ?? me['name'] ?? '').toString().trim();
+      final avatar = (me['profile_pic'] ?? me['profilePic'] ?? me['avatar_url'] ?? me['avatar'] ?? me['profile_picture'] ?? '')
+          .toString()
+          .trim();
       if (!mounted) return;
-      if (full.isNotEmpty) setState(() => _firstName = full);
+      setState(() {
+        if (full.isNotEmpty) _firstName = full; // kept for any future use
+        _username = uname.isNotEmpty ? uname : _firstName; // fallback to name
+        _avatarUrl = avatar;
+      });
     } catch (_) {}
   }
 
@@ -280,6 +292,78 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ---------- UI ----------
+  ImageProvider? _avatarProviderFrom(String? src) {
+    final s = (src ?? '').trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('assets/')) return AssetImage(s);
+    if (s.startsWith('http://') || s.startsWith('https://')) return NetworkImage(s);
+    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
+    return null;
+  }
+
+  Widget _buildHomeHeader(BuildContext context) {
+    final prov = _avatarProviderFrom(_avatarUrl);
+    final uname = (_username ?? '').trim();
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child: SizedBox(
+          height: 56,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Centered logo (ourlogo.png), fallback to KU.png
+              Image.asset(
+                'assets/images/ourlogo.png',
+                height: 44,
+                fit: BoxFit.contain,
+                errorBuilder: (ctx, err, st) => Image.asset(
+                  'assets/images/KU.png',
+                  height: 44,
+                  fit: BoxFit.contain,
+                ),
+              ),
+
+              // Left: avatar + username
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundImage: prov,
+                        backgroundColor: AppColors.sage.withOpacity(.4),
+                        child: prov == null ? const Icon(Icons.person, color: Colors.white) : null,
+                      ),
+                      const SizedBox(width: 8),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.45,
+                        ),
+                        child: Text(
+                          uname,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
   void _showSnack(String msg) {
     final m = ScaffoldMessenger.maybeOf(context);
     m?.hideCurrentSnackBar();

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../components/app_colors.dart';
 import '../../components/post_card.dart';
 import '../../models/post.dart';
 import '../post_detail.dart';
@@ -152,65 +153,95 @@ class _HashtagFeedPageState extends State<HashtagFeedPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        title: Text('#${widget.hashtag}'),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadFirstPage,
-              child: _posts.isEmpty
-                  ? ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 120),
-                        Center(child: Text('No posts for this hashtag')),
-                        SizedBox(height: 120),
-                      ],
-                    )
-                  : ListView.builder(
-                      controller: _scroll,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: _posts.length + 1,
-                      itemBuilder: (context, i) {
-                        if (i == _posts.length) {
-                          if (_fetchingMore) {
-                            return const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              child: Center(child: CircularProgressIndicator()),
-                            );
-                          }
-                          return const SizedBox(height: 16);
-                        }
-                        final p = _posts[i];
-                        final liked = _likedIds.contains(p.id);
-                        final likes = _likeCounts[p.id] ?? p.likeCount;
-                        final comments = _commentCounts[p.id] ?? p.comment;
-                        return PostCard(
-                          post: p,
-                          isLiked: liked,
-                          likeCount: likes,
-                          commentCount: comments,
-                          onToggleLike: () => _toggleLike(p),
-                          onCommentTap: () => _openComments(p),
-                          onCardTap: () => _openComments(p),
-                          onAvatarTap: null,
-                          onHashtagTap: (tag) {
-                            if (tag.toLowerCase() == widget.hashtag.toLowerCase()) return;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => HashtagFeedPage(hashtag: tag)),
-                            );
-                          },
-                        );
-                      },
-                    ),
+    final titleStyle = Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          fontSize: 20,
+          color: Colors.black87,
+        );
+
+    Widget headerBar = SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => Navigator.of(context).maybePop(),
             ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('#${widget.hashtag}', style: titleStyle, overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    Widget listBody;
+    if (_loading) {
+      listBody = const Center(child: CircularProgressIndicator());
+    } else {
+      listBody = RefreshIndicator(
+        onRefresh: _loadFirstPage,
+        child: _posts.isEmpty
+            ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 120),
+                  Center(child: Text('No posts for this hashtag', style: TextStyle(color: Colors.black54))),
+                  SizedBox(height: 120),
+                ],
+              )
+            : ListView.builder(
+                controller: _scroll,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.zero,
+                itemCount: _posts.length + 1,
+                itemBuilder: (context, i) {
+                  if (i == _posts.length) {
+                    if (_fetchingMore) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    return const SizedBox(height: 16);
+                  }
+                  final p = _posts[i];
+                  final liked = _likedIds.contains(p.id);
+                  final likes = _likeCounts[p.id] ?? p.likeCount;
+                  final comments = _commentCounts[p.id] ?? p.comment;
+                  return PostCard(
+                    post: p,
+                    isLiked: liked,
+                    likeCount: likes,
+                    commentCount: comments,
+                    onToggleLike: () => _toggleLike(p),
+                    onCommentTap: () => _openComments(p),
+                    onCardTap: () => _openComments(p),
+                    onAvatarTap: null,
+                    onHashtagTap: (tag) {
+                      if (tag.toLowerCase() == widget.hashtag.toLowerCase()) return;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => HashtagFeedPage(hashtag: tag)),
+                      );
+                    },
+                  );
+                },
+              ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: Column(
+        children: [
+          headerBar,
+          Expanded(child: listBody),
+        ],
+      ),
     );
   }
 }
