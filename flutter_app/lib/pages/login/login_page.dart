@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/services/auth_service.dart';
-import 'package:flutter_app/pages/auth/sign_up_page.dart';
 
 class LoginPage extends StatefulWidget {
   final VoidCallback? onLoggedIn;
@@ -69,7 +68,7 @@ class _LoginPageState extends State<LoginPage> {
 
             // Big title
             const Positioned(
-              top: 90,
+              top: 120,
               left: 0,
               right: 0,
               child: Center(
@@ -88,7 +87,7 @@ class _LoginPageState extends State<LoginPage> {
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: Column(
@@ -102,6 +101,8 @@ class _LoginPageState extends State<LoginPage> {
                         width: 320,
                         child: Image.asset('assets/images/login_image.png', fit: BoxFit.contain),
                       ),
+
+                      const SizedBox(height: 24),
 
                       // Email/password panel (keeps existing functionality)
                       Container(
@@ -143,6 +144,28 @@ class _LoginPageState extends State<LoginPage> {
 
                       const SizedBox(height: 20),
 
+                      // KU ALL-Login button (placeholder; keep email flow functional)
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _busy
+                              ? null
+                              : () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('KU All-Login coming soon')),
+                                  );
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: deepTeal,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: const Text('KU ALL-Login', style: TextStyle(fontSize: 18, color: Colors.white)),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
                       // Email submit button (calls existing _submit)
                       SizedBox(
                         width: double.infinity,
@@ -159,29 +182,7 @@ class _LoginPageState extends State<LoginPage> {
                                   width: 22,
                                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                 )
-                              : const Text('Login', style: TextStyle(fontSize: 18, color: Colors.white)),
-                        ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      // Sign up button
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _busy
-                              ? null
-                              : () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(builder: (_) => const SignUpPage()),
-                                  );
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: deepTeal,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                          child: const Text('Sign up', style: TextStyle(fontSize: 18, color: Colors.white)),
+                              : const Text('Login with Email', style: TextStyle(fontSize: 18, color: Colors.white)),
                         ),
                       ),
                     ],
