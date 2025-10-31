@@ -2,12 +2,13 @@
 import 'package:flutter/material.dart';
 
 import '../components/app_colors.dart';
-import '../components/header_section.dart';
+// import '../components/header_section.dart'; // no longer used for Home header
 import '../components/post_card.dart';
 import '../models/post.dart';
 import 'profile/profile_page.dart';
 import 'post_detail.dart';
 import '../services/database_service.dart';
+import '../services/auth_service.dart';
 import '../models/event.dart';
 import 'event/event_details_page.dart';
 import 'explore/hashtag_feed_page.dart';
@@ -49,7 +50,8 @@ class _HomePageState extends State<HomePage> {
 
   // Greeting
   String? _firstName;
-  String? _myAvatarUrl;
+  String? _username; // for header (to right of avatar)
+  String? _avatarUrl;
 
   // Scrollers
   final _scroll = ScrollController();
@@ -221,11 +223,16 @@ class _HomePageState extends State<HomePage> {
       final f = (me['firstname'] ?? me['firstName'] ?? '').toString().trim();
       final l = (me['lastname'] ?? me['lastName'] ?? '').toString().trim();
       final full = [f, l].where((s) => s.isNotEmpty).join(' ').trim();
-      final av = (me['profile_pic'] ?? me['profilePic'] ?? me['avatar_url'] ?? me['avatar'] ?? '').toString().trim();
+
+      final uname = (me['username'] ?? me['userName'] ?? me['name'] ?? '').toString().trim();
+      final avatar = (me['profile_pic'] ?? me['profilePic'] ?? me['avatar_url'] ?? me['avatar'] ?? me['profile_picture'] ?? '')
+          .toString()
+          .trim();
       if (!mounted) return;
       setState(() {
-        if (full.isNotEmpty) _firstName = full;
-        if (av.isNotEmpty) _myAvatarUrl = av;
+        if (full.isNotEmpty) _firstName = full; // kept for any future use
+        _username = uname.isNotEmpty ? uname : _firstName; // fallback to name
+        _avatarUrl = avatar;
       });
     } catch (_) {}
   }
@@ -250,19 +257,10 @@ class _HomePageState extends State<HomePage> {
     for (final id in ids) {
       try {
         final prof = await _db.getUserByObjectIdFiber(id);
-        String display() {
-          final first = (prof['firstname'] ?? prof['firstName'] ?? '').toString().trim();
-          final last  = (prof['lastname']  ?? prof['lastName']  ?? '').toString().trim();
-          final full = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
-          if (full.isNotEmpty) return full;
-          final uname = (prof['username'] ?? prof['userName'] ?? prof['name'] ?? '').toString().trim();
-          if (uname.isNotEmpty) return uname;
-          final email = (prof['email'] ?? '').toString();
-          if (email.contains('@')) return email.split('@').first;
-          return '';
-        }
-        final d = display();
-        if (d.isNotEmpty) nameById[id] = d;
+        final first = (prof['firstname'] ?? prof['firstName'] ?? '').toString();
+        final last = (prof['lastname'] ?? prof['lastName'] ?? '').toString();
+        final full = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
+        if (full.isNotEmpty) nameById[id] = full;
       } catch (_) {}
     }
 
@@ -294,6 +292,78 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ---------- UI ----------
+  ImageProvider? _avatarProviderFrom(String? src) {
+    final s = (src ?? '').trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('assets/')) return AssetImage(s);
+    if (s.startsWith('http://') || s.startsWith('https://')) return NetworkImage(s);
+    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
+    return null;
+  }
+
+  Widget _buildHomeHeader(BuildContext context) {
+    final prov = _avatarProviderFrom(_avatarUrl);
+    final uname = (_username ?? '').trim();
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child: SizedBox(
+          height: 56,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Centered logo (ourlogo.png), fallback to KU.png
+              Image.asset(
+                'assets/images/ourlogo.png',
+                height: 44,
+                fit: BoxFit.contain,
+                errorBuilder: (ctx, err, st) => Image.asset(
+                  'assets/images/KU.png',
+                  height: 44,
+                  fit: BoxFit.contain,
+                ),
+              ),
+
+              // Left: avatar + username
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundImage: prov,
+                        backgroundColor: AppColors.sage.withOpacity(.4),
+                        child: prov == null ? const Icon(Icons.person, color: Colors.white) : null,
+                      ),
+                      const SizedBox(width: 8),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.45,
+                        ),
+                        child: Text(
+                          uname,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
   void _showSnack(String msg) {
     final m = ScaffoldMessenger.maybeOf(context);
     m?.hideCurrentSnackBar();
@@ -551,14 +621,12 @@ class _HomePageState extends State<HomePage> {
     final header = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        HeaderSection(
-          greenBackground: true,
-          centerLogoOnly: true,
-        ),
+        _buildHomeHeader(context),
         const SizedBox(height: 12),
         _incomingEventsSection(context),
         Material(
-          color: Theme.of(context).scaffoldBackgroundColor,
+          // ✨ CHANGED: โปร่งใสเพื่อให้เห็นกราเดียนต์ด้านหลัง
+          color: Colors.transparent,
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
             child: Row(
@@ -671,17 +739,36 @@ class _HomePageState extends State<HomePage> {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Column(
-        children: [
-          header,
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _onRefresh,
-              child: postsList,
-            ),
+      // ✨ CHANGED: ให้สีพื้นหลังโปร่งใส แล้วใช้ Container ข้างในใส่ gradient
+      backgroundColor: Colors.transparent,
+      body: Container(
+        // ✨ CHANGED: พื้นหลังกราเดียนต์ทั้งหน้า
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            stops: [0.0, 0.55, 1.0],
+            colors: [
+              Color(0xFFF6FFF4), // ขาวอมเขียว (คงไว้ได้)
+              Color(0xFFE6F8EE), // เขียวมิ้นต์อ่อน
+              Color(0xFFCDEFD9), // เขียวมิ้นต์กลาง // เขียวมิ้นต์สดขึ้น // ม่วงอ่อนมาก
+            ],
           ),
-        ],
+        ),
+        child: SafeArea( // ✨ CHANGED: ให้คอนเทนต์ไม่ชน status bar
+          bottom: false,
+          child: Column(
+            children: [
+              header,
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _onRefresh,
+                  child: postsList,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
