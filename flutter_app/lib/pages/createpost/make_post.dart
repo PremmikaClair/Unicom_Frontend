@@ -219,9 +219,18 @@ class _MakePostPageState extends State<MakePostPage> {
           _myMemberships = mems;
           if (mems.isNotEmpty) {
             final m0 = mems.first;
+            String _formatOrgLabel(String? orgPath) {
+              final p = (orgPath ?? '').toString();
+              if (p.isEmpty) return '';
+              final parts = p.split('/')..removeWhere((e) => e.isEmpty);
+              if (parts.isEmpty) return '';
+              // ใช้ 1–2 segment สุดท้ายเป็น label (ตัวพิมพ์ใหญ่) เพื่อให้ได้รูปแบบคล้าย "ENG • CPSK"
+              final tail = parts.length >= 2 ? parts.sublist(parts.length - 2) : parts.sublist(parts.length - 1);
+              return tail.map((s) => s.toUpperCase()).join(' • ');
+            }
             final computedLabel = ((m0['label'] ?? '').toString().isNotEmpty)
                 ? (m0['label'] as String)
-                : '${m0['position_key'] ?? ''} • ${(m0['org_path'] ?? '').toString()}';
+                : _formatOrgLabel(m0['org_path']);
             _postedAs = {
               'org_path': (m0['org_path'] ?? '').toString(),
               'position_key': (m0['position_key'] ?? '').toString(),
@@ -270,16 +279,24 @@ class _MakePostPageState extends State<MakePostPage> {
     try {
       final db = DatabaseService();
       final list = await db.getCategoriesFiber();
+      // Normalize backend shape ({ _id, category_name, short_name })
+      // into UI-friendly shape ({ id, name, short }) and build name lookup.
       final map = <String, String>{};
+      final normalized = <Map<String, dynamic>>[];
       for (final m in list) {
-        final id = (m['id'] ?? '').toString();
-        final name = (m['name'] ?? m['short'] ?? '').toString();
+        if (m is! Map) continue;
+        final mm = Map<String, dynamic>.from(m as Map);
+        final id = (mm['id'] ?? mm['_id'] ?? '').toString();
+        final name = (mm['name'] ?? mm['short'] ?? mm['short_name'] ?? mm['category_name'] ?? '').toString();
+        final short = (mm['short'] ?? mm['short_name'] ?? '').toString();
         if (id.isEmpty) continue;
-        map[id] = name.isNotEmpty ? name : id;
+        final display = name.isNotEmpty ? name : id;
+        map[id] = display;
+        normalized.add({'id': id, 'name': display, 'short': short});
       }
       if (!mounted) return;
       setState(() {
-        _categoriesApi = list;
+        _categoriesApi = normalized;
         _catNameById
           ..clear()
           ..addAll(map);
@@ -780,7 +797,16 @@ class _MakePostPageState extends State<MakePostPage> {
       final postedAs = {
         'org_path': _postedAs!['org_path'],
         'position_key': _postedAs!['position_key'],
-        if ((_postedAs!['label'] ?? '').isNotEmpty) 'label': _postedAs!['label'],
+        // สร้าง label ถ้ายังว่าง ให้ได้ฟอร์แมตแบบ "ENG • CPSK" จาก org_path
+        'label': (() {
+          final lbl = (_postedAs!['label'] ?? '').toString();
+          if (lbl.isNotEmpty) return lbl;
+          final path = (_postedAs!['org_path'] ?? '').toString();
+          final parts = path.split('/')..removeWhere((e) => e.isEmpty);
+          if (parts.isEmpty) return '';
+          final tail = parts.length >= 2 ? parts.sublist(parts.length - 2) : parts.sublist(parts.length - 1);
+          return tail.map((s) => s.toUpperCase()).join(' • ');
+        })(),
       };
 
       final visibility = _visibilityAccess == 'public'
@@ -1117,9 +1143,17 @@ class _MakePostPageState extends State<MakePostPage> {
                         final m = filtered[i];
                         final id = '${m['org_path']}::${m['position_key']}';
                         final on = id == selectedId;
+                        String _fmtOrgLabel(String? path) {
+                          final p = (path ?? '').toString();
+                          if (p.isEmpty) return '';
+                          final parts = p.split('/')..removeWhere((e) => e.isEmpty);
+                          if (parts.isEmpty) return '';
+                          final tail = parts.length >= 2 ? parts.sublist(parts.length - 2) : parts.sublist(parts.length - 1);
+                          return tail.map((s) => s.toUpperCase()).join(' • ');
+                        }
                         final label = ((m['label'] ?? '').toString().isNotEmpty)
                             ? m['label'].toString()
-                            : '${m['position_key'] ?? ''} • ${(m['org_path'] ?? '').toString()}';
+                            : _fmtOrgLabel((m['org_path'] ?? '').toString());
                         final sub = ((m['org_short'] ?? '').toString().isNotEmpty)
                             ? m['org_short'].toString()
                             : (m['org_path'] ?? '').toString();
