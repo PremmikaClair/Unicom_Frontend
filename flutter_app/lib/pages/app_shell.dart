@@ -112,7 +112,10 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      // ✨ ให้ตัวเพจโปร่งใส แล้วให้ body วิ่งใต้ bottom nav
+      backgroundColor: Colors.transparent,
+      extendBody: true,
+
       body: IndexedStack(
         index: index,
         children: List.generate(4, (i) {
@@ -120,17 +123,16 @@ class _AppShellState extends State<AppShell> {
           return _pages[i] ??= _createPage(i);
         }),
       ),
+
       bottomNavigationBar: BottomDockNav(
-        key: UniqueKey(),                 // กันค้างค่าเดิมตอน hot reload
+        key: UniqueKey(),
         index: index,
-        // รายการแท็บ: ซ้าย = Home, Explore | ขวา = Profile, Events
         items: const [
-          BottomDockItem(icon: Icons.home_filled,      label: 'Home'),
-          BottomDockItem(icon: Icons.search_rounded,   label: 'Explore'),
-          BottomDockItem(icon: Icons.event_rounded,    label: 'Events'),  
-          BottomDockItem(icon: Icons.person_outline,   label: 'Profile'), 
+          BottomDockItem(icon: Icons.home_filled,    label: 'Home'),
+          BottomDockItem(icon: Icons.search_rounded, label: 'Explore'),
+          BottomDockItem(icon: Icons.event_rounded,  label: 'Events'),
+          BottomDockItem(icon: Icons.person_outline, label: 'Profile'),
         ],
-        // ให้ปุ่มกลางเป็น Add Post
         onCenterTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const MakePostPage()),
@@ -138,13 +140,13 @@ class _AppShellState extends State<AppShell> {
         },
         centerLabel: 'Add Post',
         centerIcon: Icons.add,
-        // ดัน Explore/Events ให้เข้าใกล้ปุ่มกลาง
-        centerGap: 40,     // ลดได้อีกเป็น 40 ถ้าอยากชิดขึ้น
+
+        centerGap: 40,
         itemSpacing: 15,
-        // ถ้าใช้ธีมเดิมโทนเขียว ให้ปลดคอมเมนต์ 3 บรรทัดนี้
-        // barColor: AppColors.sage,
-        // activeColor: Colors.white,
-        // inactiveColor: Colors.white70,
+
+        // ถ้าอยากให้แถบนำทาง "ลอย" ไม่มีพื้นหลังแน่นอน
+        // (ไฟล์ BottomDockNav เวอร์ชันที่ให้ไป รองรับอยู่แล้ว)
+        // showBarBackground: false, // ค่า default = false
         onTap: (i) {
           if (i == index) {
             _popToRootOfTab(i);
@@ -161,4 +163,5 @@ class _AppShellState extends State<AppShell> {
       ),
     );
   }
+
 }
