@@ -218,15 +218,6 @@ useEffect(() => {
           👤 User Management
           <span className="text-xs font-normal text-gray-500">cute mode</span>
         </h1>
-        <div className="flex items-center gap-3">
-          {error && <span className="text-sm text-red-600">{error}</span>}
-          <button
-            onClick={onCreate}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-sm inline-flex items-center gap-1 shadow-sm"
-          >
-            <PlusIcon /> New User
-          </button>
-        </div>
       </div>
 
       <table className="min-w-full bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">

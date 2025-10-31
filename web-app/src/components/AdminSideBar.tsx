@@ -25,7 +25,7 @@ const AdminSideBar = () => {
   const items = useMemo(() => ([
     { to: "/users", label: "Users", icon: UsersIcon },
     { to: "/roles", label: "Roles", icon: ShieldIcon },
-    { to: "/post",  label: "Posts", icon: PostIcon },
+    { to: "/post",  label: "Posts", icon: PostIcon },    
   ]), []);
 
   return (
@@ -90,17 +90,8 @@ const AdminSideBar = () => {
                     }
                   >
                     {isOpen ? "All Events" : "All"}
-                  </NavLink>
-                  <NavLink
-                    to="/events/create"
-                    title="Create Event"
-                    className={({ isActive }) =>
-                      `block rounded-lg ${isOpen ? "px-2 py-1.5" : "px-0 py-1.5 text-center"} text-sm transition
-                      ${isActive ? "bg-emerald-100/70 text-emerald-800 dark:bg-emerald-800/60 dark:text-emerald-100" : "text-emerald-900/80 dark:text-emerald-100/70 hover:bg-emerald-100/50 dark:hover:bg-emerald-800/40"}`
-                    }
-                  >
-                    {isOpen ? "Create Event" : "Create"}
-                  </NavLink>
+                  </NavLink>         
+
                   <NavLink
                     to="/events/participants"
                     title="Participant Management"
