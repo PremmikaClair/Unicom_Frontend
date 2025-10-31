@@ -449,6 +449,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onCardTap;
   final VoidCallback? onAvatarTap;
   final void Function(String hashtag)? onHashtagTap;
+  final Future<void> Function()? onDeleted;
 
   const PostCard({
     super.key,
@@ -461,6 +462,7 @@ class PostCard extends StatelessWidget {
     this.onCardTap,
     this.onAvatarTap,
     this.onHashtagTap,
+    this.onDeleted,
   });
 
   ImageProvider? _safeAvatar(String? src) {
@@ -605,17 +607,39 @@ class PostCard extends StatelessWidget {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Delete post?'),
-          content: const Text('This action cannot be undone.'),
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          title: const Text(
+            'Delete post?',
+            style: TextStyle(color: AppColors.deepGreen),
+          ),
+          content: const Text(
+            'This action cannot be undone.',
+            style: TextStyle(color: AppColors.deepGreen),
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              style: TextButton.styleFrom(foregroundColor: AppColors.deepGreen),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.deepGreen,
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              child: const Text('Delete'),
+            ),
           ],
         ),
       );
       if (ok != true) return;
       try {
         await DatabaseService().deletePost(post.id);
+        if (onDeleted != null) {
+          await onDeleted!();
+        }
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post deleted')));
         }
@@ -640,7 +664,8 @@ class PostCard extends StatelessWidget {
                 tooltip: 'Delete post',
                 visualDensity: VisualDensity.compact,
                 onPressed: _confirmAndDelete,
-                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                iconSize: 18,
+                icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.deepGreen),
               ),
             ),
           ),

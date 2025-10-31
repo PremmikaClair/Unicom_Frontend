@@ -686,6 +686,12 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  Future<void> _refreshPostsAfterDelete() async {
+    final u = _user;
+    if (u == null) return;
+    await _loadPostsFor(u);
+  }
+
   // Map posts so that username displays the owner's name for consistency
   List<models.Post> _mapPostsWithProfileName(List<models.Post> list, {UserProfile? owner}) {
     final o = owner ?? _user;
@@ -1253,6 +1259,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               SnackBar(content: Text('Hashtag: #$tag')),
                             );
                           },
+                          onDeleted: _refreshPostsAfterDelete,
                         )
                       : base_card.PostCard(
                           post: p,
