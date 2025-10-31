@@ -721,18 +721,29 @@ class DatabaseService {
     final items = <AppEvent>[];
     for (final e in data) {
       if (e is! Map) continue;
-      final ev = e['event'] as Map<String, dynamic>?;
-      final schedules = (e['schedules'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-      if (ev == null) continue;
+      // Support both old shape { event: {...}, schedules: [...] } and new shape {..., schedules: [...]}
+      final Map<String, dynamic>? evMaybe = (e['event'] is Map)
+          ? (e['event'] as Map).cast<String, dynamic>()
+          : null;
+      final ev = evMaybe ?? e.cast<String, dynamic>();
+      final schedules = ((evMaybe != null ? e['schedules'] : ev['schedules']) as List?)
+              ?.cast<Map<String, dynamic>>() ??
+          const [];
 
       // pick first schedule (if exists) as primary time/location
       DateTime start = DateTime.now();
       DateTime? end;
       String? loc;
       if (schedules.isNotEmpty) {
+        // choose the earliest time_start among schedules
+        schedules.sort((a, b) {
+          final ta = _parseTime(a['time_start']) ?? _parseTime(a['start']) ?? DateTime.now();
+          final tb = _parseTime(b['time_start']) ?? _parseTime(b['start']) ?? DateTime.now();
+          return ta.compareTo(tb);
+        });
         final s0 = schedules.first;
-        start = _parseTime(s0['time_start']) ?? start;
-        end = _parseTime(s0['time_end']);
+        start = _parseTime(s0['time_start']) ?? _parseTime(s0['start']) ?? start;
+        end = _parseTime(s0['time_end']) ?? _parseTime(s0['end']);
         loc = _str(s0['location']);
       }
 
@@ -758,7 +769,7 @@ class DatabaseService {
       }
 
       items.add(AppEvent(
-        id: _str(ev['id']) ?? _str(ev['_id']) ?? '',
+        id: _str(ev['event_id']) ?? _str(ev['id']) ?? _str(ev['_id']) ?? '',
         title: _str(ev['topic']) ?? _str(ev['title']) ?? '(untitled)',
         description: _str(ev['description']),
         category: null,
@@ -767,10 +778,10 @@ class DatabaseService {
         startTime: start,
         endTime: end,
         imageUrl: imageUrl,
-        organizer: _str(ev['org_of_content']),
+        organizer: _str(ev['org_of_content']) ?? _str(postedAs?['org_path']) ?? _str(ev['orgpath']),
         isFree: null,
         likeCount: null,
-        capacity: int.tryParse('${ev['max_participation']}'),
+        capacity: int.tryParse('${ev['max_participation']}') ?? int.tryParse('${ev['capacity']}'),
         haveForm: ev['have_form'] == true,
       ));
     }
@@ -855,63 +866,46 @@ class DatabaseService {
     Map<String, dynamic>? postedAs, // { org_path, position_key }
     String? nodeId,
   }) async {
-    // If an image is provided, use multipart (backend expects multipart for /event)
-    if ((imageBytes != null && imageBytes.isNotEmpty) || (imagePath != null && imagePath.isNotEmpty)) {
-      final uri = _buildUri('/event', {});
-      final req = http.MultipartRequest('POST', uri);
-      req.headers.addAll(_headers(const {'Accept': 'application/json'}));
+    // Always use multipart; backend expects FormData with NodeID and postedAs.*
+    final uri = _buildUri('/event', {});
+    final req = http.MultipartRequest('POST', uri);
+    req.headers.addAll(_headers(const {'Accept': 'application/json'}));
 
-      // Required fields used by backend handler
-      final pa = postedAs ?? payload['posted_as'] as Map<String, dynamic>?;
-      final orgPath = (pa?['org_path'] ?? payload['org_of_content'] ?? '').toString();
-      final posKey  = (pa?['position_key'] ?? '').toString();
-      final nid     = (nodeId ?? payload['node_id'] ?? payload['NodeID'] ?? '').toString();
-      if (nid.isNotEmpty) req.fields['NodeID'] = nid;
-      if (orgPath.isNotEmpty) req.fields['postedAs.org_path'] = orgPath;
-      if (posKey.isNotEmpty) req.fields['postedAs.position_key'] = posKey;
+    // Required fields used by backend handler
+    final pa = postedAs ?? payload['posted_as'] as Map<String, dynamic>?;
+    final orgPath = (pa?['org_path'] ?? payload['org_of_content'] ?? '').toString();
+    final posKey  = (pa?['position_key'] ?? '').toString();
+    final nid     = (nodeId ?? payload['NodeID'] ?? payload['node_id'] ?? payload['nodeId'] ?? '').toString();
+    if (nid.isNotEmpty) req.fields['NodeID'] = nid;
+    if (orgPath.isNotEmpty) req.fields['postedAs.org_path'] = orgPath;
+    if (posKey.isNotEmpty) req.fields['postedAs.position_key'] = posKey;
 
-      // Optional extras: topic/description/capacity/visibility as flat fields for forward-compat
-      void putField(String k) {
-        final v = payload[k];
-        if (v == null) return;
-        final s = v is String ? v : jsonEncode(v);
-        if (s.isNotEmpty) req.fields[k] = s;
-      }
-      for (final k in ['topic','description','max_participation','visibility','org_of_content','status','have_form']) {
-        putField(k);
-      }
-      if (payload['schedules'] != null) {
-        // Send schedules as JSON string
-        req.fields['schedules'] = jsonEncode(payload['schedules']);
-      }
-
-      // Attach image
-      if (imageBytes != null && imageBytes.isNotEmpty) {
-        final fname = (imageFilename == null || imageFilename.isEmpty) ? 'cover.jpg' : imageFilename;
-        req.files.add(http.MultipartFile.fromBytes('file', imageBytes, filename: fname));
-      } else if (imagePath != null && imagePath.isNotEmpty) {
-        req.files.add(await http.MultipartFile.fromPath('file', imagePath));
-      }
-
-      final streamed = await req.send().timeout(const Duration(seconds: 20));
-      final res = await http.Response.fromStream(streamed);
-      if (res.statusCode != 201) {
-        throw HttpException('POST $uri -> ${res.statusCode}: ${res.body}');
-      }
-      return jsonDecode(res.body) as Map<String, dynamic>;
+    // Optional extras: topic/description/capacity/visibility as flat fields for forward-compat
+    void putField(String k) {
+      final v = payload[k];
+      if (v == null) return;
+      final s = v is String ? v : jsonEncode(v);
+      if (s.isNotEmpty) req.fields[k] = s;
+    }
+    for (final k in ['topic','description','max_participation','visibility','org_of_content','status','have_form']) {
+      putField(k);
+    }
+    if (payload['schedules'] != null) {
+      // Send schedules as JSON string
+      req.fields['schedules'] = jsonEncode(payload['schedules']);
     }
 
-    // Fallback: JSON request (kept for compatibility)
-    final uri = _buildUri('/event', {});
-    final res = await _client
-        .post(uri,
-            headers: _headers(const {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            }),
-            body: jsonEncode(payload))
-        .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 201) {
+    // Attach image if available
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      final fname = (imageFilename == null || imageFilename.isEmpty) ? 'cover.jpg' : imageFilename;
+      req.files.add(http.MultipartFile.fromBytes('file', imageBytes, filename: fname));
+    } else if (imagePath != null && imagePath.isNotEmpty) {
+      req.files.add(await http.MultipartFile.fromPath('file', imagePath));
+    }
+
+    final streamed = await req.send().timeout(const Duration(seconds: 20));
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 201 && res.statusCode != 200) {
       throw HttpException('POST $uri -> ${res.statusCode}: ${res.body}');
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
@@ -923,7 +917,7 @@ class DatabaseService {
     final res = await _client
         .post(uri, headers: _headers(const {'Accept': 'application/json'}))
         .timeout(const Duration(seconds: 12));
-    if (res.statusCode != 200) {
+    if (res.statusCode != 200 && res.statusCode != 201) {
       throw HttpException('POST $uri -> ${res.statusCode}: ${res.body}');
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
@@ -951,7 +945,7 @@ class DatabaseService {
           body: jsonEncode({'questions': questions}),
         )
         .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) {
+    if (res.statusCode != 200 && res.statusCode != 201) {
       throw HttpException('POST $uri -> ${res.statusCode}: ${res.body}');
     }
     final m = jsonDecode(res.body) as Map<String, dynamic>;
