@@ -335,6 +335,14 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
         final visibility = _buildVisibility(orgPath);
 
+        // Build questions once and use to decide have_form and whether to initialize
+        final List<Map<String, dynamic>> builtQuestions = _questions
+            .asMap()
+            .entries
+            .map((e) => e.value.toJson(e.key + 1))
+            .where((q) => (q['question_text'] as String).isNotEmpty)
+            .toList();
+
         // --------- Payload: สร้างอีเวนต์แบบ DRAFT/inactive และมีฟอร์มหรือไม่ตามคำถามที่ใส่ ---------
         final payload = {
           'node_id': node_id,
@@ -345,7 +353,8 @@ class _CreateEventPageState extends State<CreateEventPage> {
           'posted_as': {'org_path': orgPath, 'position_key': posKey, 'label': labelForPostedAs ?? ''},
           'org_of_content': orgPath,
           'status': 'inactive',
-          'have_form': _questions.isNotEmpty,
+          // Only mark have_form when there are actual non-empty questions
+          'have_form': builtQuestions.isNotEmpty,
           'schedules': schedules,
           'visibility': visibility, 
         };
@@ -397,22 +406,13 @@ class _CreateEventPageState extends State<CreateEventPage> {
           eventId = '';
         }
 
-        // Flow สร้างฟอร์มคำถาม: init + replace questions
-        if (eventId.isNotEmpty && _questions.isNotEmpty) {
+        // Flow สร้างฟอร์มคำถาม: init + replace questions (only when there are actual questions)
+        if (eventId.isNotEmpty && builtQuestions.isNotEmpty) {
           try {
             await DatabaseService().initializeFormFiber(eventId); // POST /event/:id/form/initialize
 
-            final List<Map<String, dynamic>> builtQuestions = _questions
-                .asMap()
-                .entries
-                .map((e) => e.value.toJson(e.key + 1))
-                .where((q) => (q['question_text'] as String).isNotEmpty)
-                .toList();
-
-            if (builtQuestions.isNotEmpty) {
-              // POST /event/:id/form/questions (replace all)
-              await DatabaseService().createFormQuestionsFiber(eventId, builtQuestions);
-            }
+            // POST /event/:id/form/questions (replace all)
+            await DatabaseService().createFormQuestionsFiber(eventId, builtQuestions);
           } catch (e) {
             // ไม่ fail ทั้ง flow แค่แจ้งเตือน
             ScaffoldMessenger.of(context).showSnackBar(
@@ -424,12 +424,25 @@ class _CreateEventPageState extends State<CreateEventPage> {
         await showDialog(
           context: context,
           builder: (_) => AlertDialog(
-            title: const Text('Event created'),
-            content: Text('ID: ${eventId.isEmpty ? '(unknown)' : eventId}'),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text(
+              'Event Created',
+              style: TextStyle(color: AppColors.deepGreen, fontWeight: FontWeight.w800),
+            ),
+            content: const Text(
+              'Please wait for organizer approval. We will notify you once it is approved.',
+              style: TextStyle(color: AppColors.deepGreen),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK', style: TextStyle(color: AppColors.deepGreen, fontWeight: FontWeight.w700)),
+              ),
+            ],
           ),
         );
-        Navigator.pop(context);
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Create failed: $e')));
@@ -442,15 +455,15 @@ class _CreateEventPageState extends State<CreateEventPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: const Color(0xFFEDEDED),
       appBar: AppBar(
-        backgroundColor: AppColors.bg,
+        backgroundColor: AppColors.chipGrey,
         surfaceTintColor: Colors.transparent,
         elevation: 0.5,
         centerTitle: true,
-        title: const Text(
-          'Create Event',
-          style: TextStyle(color: AppColors.deepGreen, fontWeight: FontWeight.w800, fontSize: 20),
+        title: Text(
+          _stepTitle,
+          style: const TextStyle(color: AppColors.deepGreen, fontWeight: FontWeight.w800, fontSize: 20),
         ),
         iconTheme: const IconThemeData(color: AppColors.deepGreen),
         leading: IconButton(
@@ -462,7 +475,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
         children: [
-          Center(child: Text(_stepTitle, style: const TextStyle(color: AppColors.deepGreen, fontSize: 16, fontWeight: FontWeight.w700))),
+          // Title moved to AppBar
           const SizedBox(height: 10),
           Center(child: _CenteredStepper(step: _step)),
           const SizedBox(height: 12),
@@ -476,12 +489,21 @@ class _CreateEventPageState extends State<CreateEventPage> {
           Row(
             children: [
               if (_step > 0)
-                Expanded(child: OutlinedButton(onPressed: _prevStep, child: const Text('Back'))),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _prevStep,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.deepGreen,
+                      side: const BorderSide(color: AppColors.deepGreen),
+                    ),
+                    child: const Text('Back'),
+                  ),
+                ),
               if (_step > 0) const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
                   onPressed: _step == 3 ? _submit : _nextStep,
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.deepGreen, foregroundColor: AppColors.bg),
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.sage, foregroundColor: AppColors.bg),
                   child: Text(_step == 3 ? 'Create Event' : 'Next'),
                 ),
               ),
@@ -501,7 +523,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: AppColors.cardGrey,
+            color: Colors.white,
             border: Border.all(color: AppColors.chipGrey),
             borderRadius: BorderRadius.circular(16),
           ),
@@ -514,7 +536,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
                   aspectRatio: 16 / 9,
                   child: _coverBytes == null
                       ? Container(
-                          color: AppColors.cardGrey,
+                          color: Colors.white,
                           child: const Center(
                             child: Icon(Icons.image_outlined, size: 56, color: AppColors.sage),
                           ),
@@ -526,7 +548,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
                   bottom: 12,
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.deepGreen,
+                      backgroundColor: AppColors.sage,
                       foregroundColor: AppColors.bg,
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -547,7 +569,6 @@ class _CreateEventPageState extends State<CreateEventPage> {
         _boxedField(
           controller: _name, 
           hint: 'Your event name...', 
-          suffixIcon: Icons.badge_outlined,
         ),
         const SizedBox(height: 16),
 
@@ -568,21 +589,45 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
         _sectionTitle('Organizer'),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          isExpanded: true,
-          value: _selectedOrganizerPath,
-          hint: const Text('Select organizer org unit'),
-          menuMaxHeight: 320,
-          items: _manageableOrgs.map((m) {
-            final path = (m['org_path'] ?? '').toString();
-            final label = (m['short_name'] ?? m['shortname'] ?? m['name'] ?? path).toString();
-            return DropdownMenuItem<String>(
-              value: path,
-              child: Text(label, overflow: TextOverflow.ellipsis),
-            );
-          }).toList(),
-          onChanged: (v) => setState(() => _selectedOrganizerPath = v),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: AppColors.chipGrey),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          child: DropdownButtonFormField<String>(
+            isExpanded: true,
+            value: _manageableOrgs.any((m) => (m['org_path'] ?? '').toString() == (_selectedOrganizerPath ?? ''))
+                ? _selectedOrganizerPath
+                : null,
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 0, vertical: 10),
+            ),
+            hint: const Text('Select organizer org unit'),
+            dropdownColor: Colors.white,
+            menuMaxHeight: 320,
+            items: _manageableOrgs.map((m) {
+              final path = (m['org_path'] ?? '').toString();
+              final label = (m['name'] ?? m['label'] ?? path).toString();
+              return DropdownMenuItem<String>(
+                value: path,
+                child: Text(label, overflow: TextOverflow.ellipsis),
+              );
+            }).toList(),
+            onChanged: (v) => setState(() => _selectedOrganizerPath = v),
+          ),
         ),
+        if (_manageableOrgs.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'No organizer units available for your account',
+              style: TextStyle(fontSize: 12, color: AppColors.deepGreen),
+            ),
+          ),
 
         const SizedBox(height: 16),
 
@@ -591,7 +636,6 @@ class _CreateEventPageState extends State<CreateEventPage> {
         _boxedField(
           controller: _capacity,
           hint: 'Number of people that can register',
-          suffixIcon: Icons.people_alt_outlined,
           keyboardType: TextInputType.number,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
         ),
@@ -622,7 +666,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppColors.cardGrey,
+              color: Colors.white,
               border: Border.all(color: AppColors.chipGrey),
               borderRadius: BorderRadius.circular(16),
             ),
@@ -633,9 +677,9 @@ class _CreateEventPageState extends State<CreateEventPage> {
                   Text('Q${i + 1}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.deepGreen)),
                   const Spacer(),
                   const Text('Required', style: TextStyle(fontSize: 12, color: AppColors.deepGreen)),
-                  Switch(
+                  SizedBox(width: 8),
+                  _borderedWhiteSwitch(
                     value: _questions[i].isRequired,
-                    activeColor: AppColors.deepGreen,
                     onChanged: (v) => setState(() => _questions[i].isRequired = v),
                   ),
                   IconButton(
@@ -664,6 +708,10 @@ class _CreateEventPageState extends State<CreateEventPage> {
           alignment: Alignment.centerLeft,
           child: OutlinedButton.icon(
             onPressed: () => setState(() => _questions.add(_FormQuestion())),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.deepGreen,
+              side: const BorderSide(color: AppColors.deepGreen),
+            ),
             icon: const Icon(Icons.add),
             label: const Text('Add question'),
           ),
@@ -680,6 +728,114 @@ class _CreateEventPageState extends State<CreateEventPage> {
         _sectionTitle('Preview'),
         const SizedBox(height: 8),
         _detailLikePreviewCard(),
+        _questionnairePreview(),
+      ],
+    );
+  }
+
+  // ===== Questionnaire preview (cards like event_form_question) =====
+  Widget _questionnairePreview() {
+    final items = _questions
+        .asMap()
+        .entries
+        .where((e) => e.value.title.trim().isNotEmpty)
+        .toList();
+
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    const double ballSize = 26;
+    const Color previewFieldBg = Color(0xFFF7F9F5);
+
+    Widget questionCard({required int index, required String text, required bool requiredQ}) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.chipGrey),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 3)),
+          ],
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: ballSize,
+                  height: ballSize,
+                  decoration: const BoxDecoration(
+                    color: AppColors.deepGreen,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2)),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      height: 1.0,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: RichText(
+                    text: TextSpan(
+                      text: text,
+                      style: const TextStyle(
+                        color: AppColors.deepGreen,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        height: 1.25,
+                      ),
+                      children: [
+                        if (requiredQ)
+                          const TextSpan(text: ' *', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            IgnorePointer(
+              child: TextField(
+                enabled: false,
+                maxLines: 1,
+                decoration: InputDecoration(
+                  hintText: 'Your answer here',
+                  filled: true,
+                  fillColor: previewFieldBg,
+                  border: OutlineInputBorder(
+                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        _sectionTitle('Questionnaire'),
+        const SizedBox(height: 8),
+        for (final e in items) ...[
+          questionCard(index: e.key, text: e.value.title.trim(), requiredQ: e.value.isRequired),
+          if (e != items.last) const SizedBox(height: 14),
+        ],
       ],
     );
   }
@@ -703,7 +859,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
       children: [
         Container(
           decoration: BoxDecoration(
-            color: const Color.fromARGB(0, 255, 255, 255),
+            color: Colors.white,
             border: Border.all(color: AppColors.chipGrey),
             borderRadius: BorderRadius.circular(16),
           ),
@@ -732,7 +888,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
   Widget _boxedSmall({required Widget child}) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color.fromARGB(0, 255, 255, 255),
+        color: Colors.white,
         border: Border.all(color: AppColors.chipGrey),
         borderRadius: BorderRadius.circular(16),
       ),
@@ -752,6 +908,10 @@ class _CreateEventPageState extends State<CreateEventPage> {
         alignment: Alignment.centerRight,
         child: OutlinedButton.icon(
           onPressed: _addDay,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.deepGreen,
+            side: const BorderSide(color: AppColors.deepGreen),
+          ),
           icon: const Icon(Icons.add),
           label: const Text('Add day'),
         ),
@@ -777,7 +937,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.cardGrey,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.chipGrey),
       ),
@@ -791,9 +951,9 @@ class _CreateEventPageState extends State<CreateEventPage> {
               Row(
                 children: [
                   const Text('Same as Day 1', style: TextStyle(fontSize: 12, color: AppColors.deepGreen)),
-                  Switch(
+                  SizedBox(width: 8),
+                  _borderedWhiteSwitch(
                     value: d.sameAsDay1,
-                    activeColor: AppColors.deepGreen,
                     onChanged: (v) => setState(() => d.sameAsDay1 = v),
                   ),
                 ],
@@ -886,11 +1046,38 @@ class _CreateEventPageState extends State<CreateEventPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.cardGrey,
+          color: Colors.white,
           border: Border.all(color: AppColors.chipGrey),
           borderRadius: BorderRadius.circular(12),
         ),
         child: child,
+      ),
+    );
+  }
+
+  Widget _borderedWhiteSwitch({required bool value, required ValueChanged<bool> onChanged}) {
+    Color resolveThumb(Set<MaterialState> s) {
+      if (s.contains(MaterialState.selected)) return AppColors.deepGreen;
+      return const Color(0xFF757575);
+    }
+    Color resolveTrack(Set<MaterialState> s) {
+      if (s.contains(MaterialState.selected)) return AppColors.deepGreen.withOpacity(0.15);
+      return Colors.white;
+    }
+
+    return SwitchTheme(
+      data: SwitchThemeData(
+        // Track: white when off, light green when on
+        trackColor: MaterialStateProperty.resolveWith(resolveTrack),
+        // Deep green outline both states
+        trackOutlineColor: MaterialStateProperty.resolveWith((_) => AppColors.deepGreen),
+        trackOutlineWidth: MaterialStateProperty.resolveWith((_) => 1.5),
+        // Thumb: deepGreen when on, grey when off
+        thumbColor: MaterialStateProperty.resolveWith(resolveThumb),
+      ),
+      child: Switch(
+        value: value,
+        onChanged: onChanged,
       ),
     );
   }
@@ -914,7 +1101,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: selected ? AppColors.deepGreen : AppColors.cardGrey,
+              color: selected ? AppColors.deepGreen : Colors.white,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.chipGrey),
             ),
@@ -940,7 +1127,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.cardGrey,
+        color: Colors.white,
         border: Border.all(color: AppColors.chipGrey),
         borderRadius: BorderRadius.circular(16),
       ),
@@ -952,7 +1139,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
             aspectRatio: 16 / 9,
             child: _coverBytes == null
                 ? Container(
-                    color: AppColors.cardGrey,
+                    color: Colors.white,
                     child: const Center(child: Icon(Icons.image, size: 40, color: AppColors.sage)),
                   )
                 : Image.memory(_coverBytes!, fit: BoxFit.cover),
@@ -1041,7 +1228,7 @@ class _CenteredStepper extends StatelessWidget {
       width: width,
       height: 3,
       decoration: BoxDecoration(
-        color: active ? AppColors.deepGreen : AppColors.chipGrey,
+        color: AppColors.sage,
         borderRadius: BorderRadius.circular(999),
       ),
     );

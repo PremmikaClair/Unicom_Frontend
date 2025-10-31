@@ -1,12 +1,13 @@
 // lib/components/visibility_selector.dart
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
+import 'app_colors.dart';
 
 // ใช้ enum เดียวกันทั้งแอปจากที่นี่
 enum VisibilityAccess { public, org, custom }
 
-const _kFieldBg = Color(0xFFF9F9F7);
-const _kGrayBorder = Color(0xFFE0E0E0);
+const _kFieldBg = Colors.white;
+const _kGrayBorder = AppColors.chipGrey;
 const _kText = Color(0xFF233127);
 const _kSubtle = Color(0xFF9BA3A0);
 
@@ -162,6 +163,7 @@ class _VisibilitySelectorState extends State<VisibilitySelector> {
             value: VisibilityAccess.public,
             groupValue: widget.value,
             onChanged: (v) => widget.onAccessChanged(v!),
+            activeColor: AppColors.deepGreen,
             title: const Text('Public (anyone can register)', style: TextStyle(color: _kText)),
           ),
           RadioListTile<VisibilityAccess>(
@@ -169,6 +171,7 @@ class _VisibilitySelectorState extends State<VisibilitySelector> {
             value: VisibilityAccess.org,
             groupValue: widget.value,
             onChanged: (v) => widget.onAccessChanged(v!),
+            activeColor: AppColors.deepGreen,
             title: const Text('Only my organization (posted_as org_path)', style: TextStyle(color: _kText)),
           ),
           RadioListTile<VisibilityAccess>(
@@ -179,6 +182,7 @@ class _VisibilitySelectorState extends State<VisibilitySelector> {
               widget.onAccessChanged(v!);
               await _bootstrap();
             },
+            activeColor: AppColors.deepGreen,
             title: const Text('Custom (select faculties & clubs)', style: TextStyle(color: _kText)),
           ),
 
@@ -187,7 +191,7 @@ class _VisibilitySelectorState extends State<VisibilitySelector> {
             _searchBar(),
             const SizedBox(height: 8),
             _roleCard(
-              color: Colors.teal,
+              color: AppColors.deepGreen,
               icon: Icons.school,
               title: 'Faculty',
               open: _openFaculty,
@@ -202,11 +206,11 @@ class _VisibilitySelectorState extends State<VisibilitySelector> {
                     .toList(),
                 selected: widget.facultySelected,
                 onChanged: (set) => widget.onFacultyChanged({...set}),
-                color: Colors.teal.shade700,
+                color: AppColors.deepGreen,
               ),
             ),
             _roleCard(
-              color: Colors.indigo,
+              color: AppColors.deepGreen,
               icon: Icons.groups,
               title: 'Clubs',
               open: _openClubs,
@@ -221,7 +225,7 @@ class _VisibilitySelectorState extends State<VisibilitySelector> {
                     .toList(),
                 selected: widget.clubSelected,
                 onChanged: (set) => widget.onClubChanged({...set}),
-                color: Colors.indigo,
+                color: AppColors.deepGreen,
               ),
             ),
             if (_loading)
