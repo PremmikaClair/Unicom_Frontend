@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../components/app_colors.dart';
 import '../../models/event.dart';
-import '../../components/filter_sheet.dart';
+import '../../components/filter_event_sheet.dart';
 import '../../models/categories.dart';
 import 'event_details_page.dart';
 import 'create_event_page.dart';
@@ -50,13 +50,16 @@ class _EventsPageState extends State<EventsPage> {
 
   Future<List<_EventVM>> _fetchEventsFiber() async {
     final db = DatabaseService();
-    // Fetch visible events
-    final list = await db.getEventsFiberList();
+    // Build server-side search/filter params
+    final q = _searchCtrl.text.trim();
+    final roles = _filters.rolesIds.toList();
+    // Fetch visible events via API params (list format with counts)
+    final list = await db.getEventsFiberList(q: q.isEmpty ? null : q, roles: roles.isEmpty ? null : roles);
     if (list.isEmpty) return const <_EventVM>[];
 
     // For each event, fetch detail to fill joined and confirm capacity
     final futures = list.map((e) async {
-      int joined = 0;
+      int joined = e.currentParticipants ?? 0;
       int capacity = e.capacity ?? 0;
       List<EventDayDetail> dayDetails = const [];
       try {
@@ -115,7 +118,19 @@ class _EventsPageState extends State<EventsPage> {
       return _EventVM(e, joined: joined, capacity: capacity, dayDetails: dayDetails);
     }).toList();
 
-    final vms = await Future.wait(futures);
+    var vms = await Future.wait(futures);
+
+    // Filter out expired events (day-level). Keep if today <= end date.
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    bool isExpired(AppEvent ev) {
+      final end = ev.endTime;
+      if (end == null) return false;
+      final endDay = DateTime(end.year, end.month, end.day);
+      return today.isAfter(endDay);
+    }
+    vms = vms.where((vm) => !isExpired(vm.event)).toList();
+
     return vms;
   }
 
@@ -207,18 +222,21 @@ class _EventsPageState extends State<EventsPage> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => const FilterBottomSheet(
+        builder: (_) => FilterBottomSheet(
               loadFilters: mockLoadFilters,
-              initial: FilterSheetResult(facultyIds: {}, clubIds: {}, categoryIds: {}),
+              initial: _filters,
             ));
-    if (!mounted || result == null) return;
+    if (!mounted) return;
     setState(() {
-      _filters = result;
-      _activeFiltersCount = result.facultyIds.length +
-          result.departmentIds.length +
-          result.clubIds.length +
-          result.categoryIds.length +
-          result.rolesIds.length;
+      if (result == null) {
+        // Cleared or no selections -> back to default feed
+        _filters = const FilterSheetResult();
+        _activeFiltersCount = 0;
+      } else {
+        _filters = result;
+        _activeFiltersCount = result.facultyIds.length + result.clubIds.length;
+      }
+      _future = _fetchEventsFiber();
     });
   }
 
@@ -447,14 +465,14 @@ class _EventsPageState extends State<EventsPage> {
                                           isCollapsed: true,
                                         ),
                                         textInputAction: TextInputAction.search,
-                                        onSubmitted: (_) => setState(() {}),
+                                        onSubmitted: (_) => setState(() { _future = _fetchEventsFiber(); }),
                                       ),
                                     ),
                                     if (_searchCtrl.text.isNotEmpty)
                                       GestureDetector(
                                         onTap: () {
                                           _searchCtrl.clear();
-                                          setState(() {});
+                                          setState(() { _future = _fetchEventsFiber(); });
                                         },
                                         child: const Icon(Icons.close_rounded,
                                             size: 18, color: Colors.black38),
@@ -464,31 +482,37 @@ class _EventsPageState extends State<EventsPage> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            InkWell(
-                              onTap: _openFilterSheet,
-                              borderRadius: BorderRadius.circular(ctlRadius),
-                              child: Container(
-                                height: ctlHeight,
-                                padding: const EdgeInsets.symmetric(horizontal: 14),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(ctlRadius),
-                                ),
-                                child: Row(
-                                  children: const [
-                                    Icon(Icons.filter_list, size: 20, color: Colors.black45),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'filters',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black45,
+                            Builder(builder: (_) {
+                              final active = _activeFiltersCount > 0;
+                              final bg = active ? AppColors.sage : Colors.white;
+                              final fg = active ? Colors.white : Colors.black45;
+                              return InkWell(
+                                onTap: _openFilterSheet,
+                                borderRadius: BorderRadius.circular(ctlRadius),
+                                child: Container(
+                                  height: ctlHeight,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                                  decoration: BoxDecoration(
+                                    color: bg,
+                                    borderRadius: BorderRadius.circular(ctlRadius),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.filter_list, size: 20, color: fg),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'filters',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: fg,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ),
+                              );
+                            }),
                           ],
                         ),
                       ),
@@ -513,31 +537,6 @@ class _EventsPageState extends State<EventsPage> {
                           }
 
                           var items = snap.data ?? const <_EventVM>[];
-                          final q = _searchCtrl.text.trim().toLowerCase();
-                          if (q.isNotEmpty) {
-                            items = items
-                                .where((vm) =>
-                                    vm.event.title.toLowerCase().contains(q) ||
-                                    (vm.event.location ?? '').toLowerCase().contains(q))
-                                .toList();
-                          }
-
-                          final catSel = _filters.categoryIds;
-                          final rolesSel = _filters.rolesIds;
-
-                          if (catSel.isNotEmpty) {
-                            items = items.where((vm) {
-                              final mapped = _mapCategory(vm.event.category);
-                              return catSel.contains(mapped);
-                            }).toList();
-                          }
-
-                          if (rolesSel.isNotEmpty) {
-                            items = items.where((vm) {
-                              final r = _norm(vm.event.role);
-                              return rolesSel.contains(r);
-                            }).toList();
-                          }
 
                           if (items.isEmpty) {
                             return const Padding(

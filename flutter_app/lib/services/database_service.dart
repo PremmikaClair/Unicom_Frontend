@@ -742,9 +742,13 @@ class DatabaseService {
   }
 
   // ---------- Events (main-webbase direct list) ----------
-  // GET /event -> [ { event: {...}, schedules: [...] }, ... ]
-  Future<List<AppEvent>> getEventsFiberList() async {
-    final uri = _buildUri('/event', {});
+  // GET /event?q=&role= -> [ { event: {...}, schedules: [...] }, ... ]
+  Future<List<AppEvent>> getEventsFiberList({String? q, List<String>? roles}) async {
+    final roleCsv = (roles == null || roles.isEmpty) ? null : roles.join(',');
+    final uri = _buildUri('/event', {
+      if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      if (roleCsv != null) 'role': roleCsv,
+    });
     final res = await _get(uri);
     if (res.statusCode != 200) {
       throw HttpException('GET $uri -> ${res.statusCode}: ${res.body}');
@@ -777,21 +781,23 @@ class DatabaseService {
               ?.cast<Map<String, dynamic>>() ??
           const [];
 
-      // pick first schedule (if exists) as primary time/location
+      // derive primary start (earliest) and end (latest) from schedules
       DateTime start = DateTime.now();
       DateTime? end;
       String? loc;
       if (schedules.isNotEmpty) {
-        // choose the earliest time_start among schedules
-        schedules.sort((a, b) {
+        final sorted = [...schedules];
+        sorted.sort((a, b) {
           final ta = _parseTime(a['time_start']) ?? _parseTime(a['start']) ?? DateTime.now();
           final tb = _parseTime(b['time_start']) ?? _parseTime(b['start']) ?? DateTime.now();
           return ta.compareTo(tb);
         });
-        final s0 = schedules.first;
-        start = _parseTime(s0['time_start']) ?? _parseTime(s0['start']) ?? start;
-        end = _parseTime(s0['time_end']) ?? _parseTime(s0['end']);
-        loc = _str(s0['location']);
+        final sFirst = sorted.first;
+        final sLast = sorted.last;
+        start = _parseTime(sFirst['time_start']) ?? _parseTime(sFirst['start']) ?? start;
+        final lastEnd = _parseTime(sLast['time_end']) ?? _parseTime(sLast['end']);
+        end = lastEnd ?? ( (_parseTime(sLast['time_start']) ?? _parseTime(sLast['start']) ?? start).add(const Duration(hours: 1)) );
+        loc = _str(sFirst['location']) ?? _str(sLast['location']);
       }
 
       final postedAs = (ev['posted_as'] as Map?)?.cast<String, dynamic>();
@@ -830,6 +836,7 @@ class DatabaseService {
         likeCount: null,
         capacity: int.tryParse('${ev['max_participation']}') ?? int.tryParse('${ev['capacity']}'),
         haveForm: ev['have_form'] == true,
+        currentParticipants: int.tryParse('${ev['current_participation']}'),
       ));
     }
 
