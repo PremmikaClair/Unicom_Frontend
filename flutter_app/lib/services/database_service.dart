@@ -86,6 +86,20 @@ class DatabaseService {
     return PagedResult(items: items, nextCursor: next);
   }
 
+  // DELETE /posts/:postId
+  Future<void> deletePost(String postId) async {
+    final uri = _buildUri('/posts/${Uri.encodeComponent(postId)}', {});
+    final res = await _client
+        .delete(
+          uri,
+          headers: _headers(const {'Accept': 'application/json'}),
+        )
+        .timeout(const Duration(seconds: 12));
+    if (res.statusCode != 200 && res.statusCode != 204 && res.statusCode != 202) {
+      throw HttpException('DELETE $uri -> ${res.statusCode}: ${res.body}');
+    }
+  }
+
   // ---------- Feed with server-side filters (/posts/feed) ----------
   // GET /posts/feed?limit=&cursor=&sort=&category=&role=
   Future<PagedResult<Post>> getFeed({
