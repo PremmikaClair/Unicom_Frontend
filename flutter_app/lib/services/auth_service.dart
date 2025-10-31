@@ -78,6 +78,56 @@ class AuthService {
     await _saveToken(null);
   }
 
+  // ---- Registration (Sign Up) ----
+  // Payload mirrors backend models.RegisterRequest JSON schema
+  // firstname, lastname, email, password are the common required fields
+  // others are optional
+  Future<Map<String, dynamic>> register(RegisterPayload p) async {
+    final uri = apiUri('/register');
+    final email = p.email.trim();
+    final map = <String, dynamic>{
+      // lowercase keys (our local backend)
+      'firstname': p.firstname.trim(),
+      'lastname': p.lastname.trim(),
+      if (p.thaiprefix != null && p.thaiprefix!.isNotEmpty) 'thaiprefix': p.thaiprefix,
+      if (p.gender != null && p.gender!.isNotEmpty) 'gender': p.gender,
+      if (p.typePerson != null && p.typePerson!.isNotEmpty) 'type_person': p.typePerson,
+      if (p.studentId != null && p.studentId!.isNotEmpty) 'student_id': p.studentId,
+      if (p.advisorId != null && p.advisorId!.isNotEmpty) 'advisor_id': p.advisorId,
+      'email': email,
+      'password': p.password,
+      if (p.organizePath != null && p.organizePath!.isNotEmpty) 'organize_path': p.organizePath,
+
+      // TitleCase keys (remote backend examples)
+      'FirstName': p.firstname.trim(),
+      'LastName': p.lastname.trim(),
+      if (p.thaiprefix != null && p.thaiprefix!.isNotEmpty) 'ThaiPrefix': p.thaiprefix,
+      if (p.gender != null && p.gender!.isNotEmpty) 'Gender': p.gender,
+      if (p.typePerson != null && p.typePerson!.isNotEmpty) 'TypePerson': p.typePerson,
+      if (p.studentId != null && p.studentId!.isNotEmpty) 'StudentID': p.studentId,
+      if (p.advisorId != null && p.advisorId!.isNotEmpty) 'AdvisorID': p.advisorId,
+      'Email': email,
+      'Password': p.password,
+      if (p.organizePath != null && p.organizePath!.isNotEmpty) 'OrgPath': p.organizePath,
+      if (p.organizePath != null && p.organizePath!.isNotEmpty) 'OrganizePath': p.organizePath,
+    };
+    final body = jsonEncode(map);
+
+    final res = await http
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          body: body,
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (res.statusCode != 201 && res.statusCode != 200) {
+      throw Exception('Register failed: ${res.statusCode} ${res.body}');
+    }
+    final data = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body);
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
   /// POST /login { email, password } -> { accessToken }
   Future<void> login(String email, String password) async {
     final uri = apiUri('/login');
@@ -114,4 +164,55 @@ class AuthService {
     final data = jsonDecode(body);
     return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
+
+  /// POST /verify-otp { email, otp }
+  Future<void> verifyOtp({required String email, required String otp}) async {
+    final uri = apiUri('/verify-otp');
+    final res = await http
+        .post(
+          uri,
+          headers: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          body: jsonEncode({'email': email.trim(), 'otp': otp.trim()}),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    // Treat 200 OK and 201 Created as success
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      // Try to surface backend 'error' field when possible
+      try {
+        final body = jsonDecode(res.body);
+        final msg = body is Map && body['error'] != null ? body['error'].toString() : res.body;
+        throw Exception('Verify failed: ${res.statusCode} $msg');
+      } catch (_) {
+        throw Exception('Verify failed: ${res.statusCode} ${res.body}');
+      }
+    }
+  }
+}
+
+// Registration payload used by SignUpPage and OTP resend
+class RegisterPayload {
+  RegisterPayload({
+    required this.firstname,
+    required this.lastname,
+    this.thaiprefix,
+    this.gender,
+    this.typePerson,
+    this.studentId,
+    this.advisorId,
+    required this.email,
+    required this.password,
+    this.organizePath,
+  });
+
+  final String firstname;
+  final String lastname;
+  final String? thaiprefix;
+  final String? gender;
+  final String? typePerson;
+  final String? studentId;
+  final String? advisorId;
+  final String email;
+  final String password;
+  final String? organizePath;
 }
