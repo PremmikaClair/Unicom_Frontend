@@ -14,7 +14,6 @@ import 'explore/hashtag_feed_page.dart';
 
 import '../components/filter_pill.dart';
 import '../components/filter_sheet.dart';
-import '../models/categories.dart';
 
 import '../controllers/like_controller.dart';
 
@@ -50,12 +49,6 @@ class _HomePageState extends State<HomePage> {
 
   // Greeting
   String? _firstName;
-
-  // (kept for UI compatibility)
-  String _query = '';
-  final Set<String> _chipIds = <String>{};
-  String? _categoryId = 'all';
-  String? _roleId = 'any';
 
   // Scrollers
   final _scroll = ScrollController();
@@ -99,14 +92,13 @@ class _HomePageState extends State<HomePage> {
   Future<void> _loadFirstPage() async {
     setState(() => _loading = true);
     try {
-      final page = _hasAnyFilter
-          ? await _db.getFeed(
-              limit: _pageSize,
-              categories: _activeFilter?.categoryIds.toList(),
-              roles: _activeFilter?.rolesIds.toList(),
-              sort: 'time',
-            )
-          : await _db.getPosts(limit: _pageSize);
+      // Always use getFeed; if no filters, just send limit=20
+      final page = await _db.getFeed(
+        limit: _pageSize,
+        categories: _hasAnyFilter ? _activeFilter?.categoryIds.toList() : null,
+        roles: _hasAnyFilter ? _activeFilter?.rolesIds.toList() : null,
+        sort: 'time',
+      );
 
       setState(() {
         _posts = page.items;
@@ -164,64 +156,19 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  List<Post> _filterPostsLocally(List<Post> input, FilterSheetResult r) {
-    final Set<String> wantedCats =
-        r.categoryIds.map((s) => s.trim().toLowerCase()).where((s) => s.isNotEmpty).toSet();
-
-    final Set<String> wantedRoles = r.rolesIds;
-
-    bool matchesCategory(Post p) {
-      if (wantedCats.isEmpty) return true;
-      final c = (p.category ?? '').trim().toLowerCase();
-      return c.isNotEmpty && wantedCats.contains(c);
-    }
-
-    bool matchesRoles(Post p) {
-      if (wantedRoles.isEmpty) return true;
-
-      final roles = <String>{
-        ...((p.authorRoles ?? const <dynamic>[]) as List).map((e) => '$e'),
-        ...((p.visibilityRoles ?? const <dynamic>[]) as List).map((e) => '$e'),
-      }.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-
-      bool roleHit(String want, String have) {
-        final w = want.trim();
-        final h = have.trim();
-        if (w.isEmpty || h.isEmpty) return false;
-
-        if (w.endsWith('/*')) {
-          final prefixWithSlash = w.substring(0, w.length - 1); // "/fac/bus/"
-          final exactFaculty = prefixWithSlash.substring(0, prefixWithSlash.length - 1); // "/fac/bus"
-          return h == exactFaculty || h.startsWith(prefixWithSlash);
-        }
-        return h == w;
-      }
-
-      for (final have in roles) {
-        for (final want in wantedRoles) {
-          if (roleHit(want, have)) return true;
-        }
-      }
-      return false;
-    }
-
-    return input.where((p) => matchesCategory(p) && matchesRoles(p)).toList();
-  }
-
   Future<void> _loadMore() async {
     if (_fetchingMore || _nextCursor == null) return;
     setState(() => _fetchingMore = true);
 
     try {
-      final page = _hasAnyFilter
-          ? await _db.getFeed(
-              limit: _pageSize,
-              cursor: _nextCursor,
-              categories: _activeFilter?.categoryIds.toList(),
-              roles: _activeFilter?.rolesIds.toList(),
-              sort: 'time',
-            )
-          : await _db.getPosts(limit: _pageSize, cursor: _nextCursor);
+      // Always use getFeed; if no filters, just pass limit/cursor
+      final page = await _db.getFeed(
+        limit: _pageSize,
+        cursor: _nextCursor,
+        categories: _hasAnyFilter ? _activeFilter?.categoryIds.toList() : null,
+        roles: _hasAnyFilter ? _activeFilter?.rolesIds.toList() : null,
+        sort: 'time',
+      );
 
       setState(() {
         _posts.addAll(page.items);
