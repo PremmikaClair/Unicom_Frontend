@@ -387,15 +387,15 @@ class _EventsPageState extends State<EventsPage> {
                                   ),
                                   if (_hasUnreadNoti)
                                     Positioned(
-                                      right: 13,  // ปรับตำแหน่งได้ตามใจ
+                                      right: 12,  // ปรับตำแหน่งได้ตามใจ
                                       top: 13,
                                       child: Container(
-                                        width: 8,
-                                        height: 8,
+                                        width: 9,
+                                        height: 9,
                                         decoration: BoxDecoration(
                                           color: Colors.red,
                                           shape: BoxShape.circle,
-                                          border: Border.all(color: Colors.white, width: 1.5),
+                                          border: Border.all(color: Colors.white, width: 0.8),
                                         ),
                                       ),
                                     ),
