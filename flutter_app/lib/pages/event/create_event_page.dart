@@ -1,56 +1,19 @@
-// create_event_page.dart
-import 'dart:typed_data';
+// lib/pages/event/create_event_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../../services/database_service.dart';
+import '../../components/visibility_selector.dart';
+import '../../components/app_colors.dart'; 
 
-void main() => runApp(const CreateEventApp());
-
-class CreateEventApp extends StatelessWidget {
-  const CreateEventApp({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Create Event',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF7F7F9),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFF4D96),
-          brightness: Brightness.light,
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: const OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(14)),
-            borderSide: BorderSide(color: Color(0xFFFF4D96)),
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-        ),
-      ),
-      home: const CreateEventPage(),
-    );
-  }
-}
-
-/* ---------- Model ---------- */
+/* ---------- Models ---------- */
 class DayPlan {
   DateTime date;
   TimeOfDay start;
   TimeOfDay end;
   String location;
-  String note;
+  String description;
   bool sameAsDay1;
 
   DayPlan({
@@ -58,21 +21,24 @@ class DayPlan {
     required this.start,
     required this.end,
     this.location = '',
-    this.note = '',
+    this.description = '',
     this.sameAsDay1 = false,
   });
+}
 
-  Map<String, dynamic> toJson() => {
-        'date': date.toIso8601String(),
-        'startTime': DateTime(date.year, date.month, date.day, start.hour, start.minute).toIso8601String(),
-        'endTime': DateTime(date.year, date.month, date.day, end.hour, end.minute).toIso8601String(),
-        'location': location,
-        'note': note,
-        'sameAsDay1': sameAsDay1,
+// แบบฟอร์ม (inline ที่ Step 2)
+class _FormQuestion {
+  String title;
+  bool isRequired;
+  _FormQuestion({this.title = '', this.isRequired = false});
+
+  Map<String, dynamic> toJson(int index) => {
+        'order_index': index,
+        'question_text': title.trim(),
+        'required': isRequired,
       };
 }
 
-/* ---------- Page ---------- */
 class CreateEventPage extends StatefulWidget {
   const CreateEventPage({super.key});
   @override
@@ -80,66 +46,72 @@ class CreateEventPage extends StatefulWidget {
 }
 
 class _CreateEventPageState extends State<CreateEventPage> {
-  final _formKey = GlobalKey<FormState>();
+  int _step = 0;
+  String get _stepTitle =>
+      const ['Basic information', 'Details', 'Questionnaire', 'Preview'][_step];
 
   // Basics
   final _name = TextEditingController();
-  final _description = TextEditingController();
-  final _organizer = TextEditingController();
-  final _capacity = TextEditingController(text: '200'); // Max Registrants
+  final _capacity = TextEditingController();
 
-  // Categories removed
-
-  // Roles (multi) — NEW
-  final List<String> _allRoles = const [
-    'Student','Teacher','Staff','Alumni','Guest'
-  ];
-  final Set<String> _selectedRoles = {};
-
-  // Cover photo (16:9 เหมือน event_detail_page)
+  // Cover photo
   final ImagePicker _picker = ImagePicker();
   Uint8List? _coverBytes;
 
   // Days
   final List<DayPlan> _days = [];
+  // Preview selection
+  int _previewDayIndex = 0;
 
-  // Organizer org dropdown (manageable orgs)
+  // Manageable orgs
   List<Map<String, dynamic>> _manageableOrgs = const [];
   String? _selectedOrganizerPath;
 
-  // Visibility audience selection
-  final Set<String> _selectedAudience = <String>{};
-  List<Map<String, String>> _orgNodesCache = const [];
+  // Questions
+  final List<_FormQuestion> _questions = [];
+
+  // Visibility
+  VisibilityAccess _access = VisibilityAccess.public;
+  Set<String> _facultyPaths = {};
+  Set<String> _clubPaths = {};
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _name.text = 'Open House ${now.year + 1}';
-    _description.text = 'Campus tour and activities';
-    _organizer.text = 'KU PR';
-    _selectedRoles.add('Student'); // ค่าเริ่มต้นอย่างน้อย 1 role
+    final startLocal = _roundUpToHour(now.add(const Duration(hours: 0)));
+    final endLocal = startLocal.add(const Duration(hours: 2));
+
     _days.add(DayPlan(
-      date: DateTime(now.year + 1, 1, 15),
-      start: const TimeOfDay(hour: 11, minute: 0),
-      end: const TimeOfDay(hour: 15, minute: 0),
-      location: 'Sports Center',
-      note: 'Registration desk at the left entrance.',
+      date: DateTime(startLocal.year, startLocal.month, startLocal.day),
+      start: TimeOfDay(hour: startLocal.hour, minute: startLocal.minute),
+      end: TimeOfDay(hour: endLocal.hour, minute: endLocal.minute),
     ));
 
     _loadManageableOrgs();
-    // preload manageable orgs; audience picker loads on demand
+  }                     
+
+  DateTime _roundUpToHour(DateTime t) {
+    if (t.minute == 0 && t.second == 0 && t.millisecond == 0 && t.microsecond == 0) return t;
+    return DateTime(t.year, t.month, t.day, t.hour + 1);
   }
 
-  // ---- Utils (no intl) ----
+  @override
+  void dispose() {
+    _name.dispose();
+    _capacity.dispose();
+    super.dispose();
+  }
+
+  // ---- Utils ----
   String _fmtDate(DateTime d) =>
-      '${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][d.weekday - 1]}, ${d.day} '
-      '${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.month - 1]}, ${d.year}';
+      '${['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][(d.weekday + 6) % 7]}, '
+      '${d.day.toString().padLeft(2, '0')} '
+      '${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.month - 1]}';
   String _fmtTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   int _toInt(String s, {int fallback = 0}) => int.tryParse(s.trim()) ?? fallback;
 
-  // ---- Cover picker ----
   Future<void> _pickCover() async {
     final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (x == null) return;
@@ -147,15 +119,21 @@ class _CreateEventPageState extends State<CreateEventPage> {
     setState(() => _coverBytes = bytes);
   }
 
-  // ---- Date/Time pickers ----
   Future<void> _pickDate(int i) async {
     final picked = await showDatePicker(
-      context: context, firstDate: DateTime(2020), lastDate: DateTime(2100), initialDate: _days[i].date);
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      initialDate: _days[i].date,
+    );
     if (picked != null) setState(() => _days[i].date = picked);
   }
 
   Future<void> _pickTime(int i, {required bool start}) async {
-    final t = await showTimePicker(context: context, initialTime: start ? _days[i].start : _days[i].end);
+    final t = await showTimePicker(
+      context: context,
+      initialTime: start ? _days[i].start : _days[i].end,
+    );
     if (t != null) setState(() => start ? _days[i].start = t : _days[i].end = t);
   }
 
@@ -171,344 +149,287 @@ class _CreateEventPageState extends State<CreateEventPage> {
     } catch (_) {}
   }
 
-  Future<void> _openAudiencePicker() async {
-    final temp = _selectedAudience.toSet();
-    // Load all org nodes once, then do client-side search
-    if (_orgNodesCache.isEmpty) {
-      try {
-        final tree = await DatabaseService().getOrgTreeFiber(start: '/');
-        _orgNodesCache = _flattenOrgTree(tree);
-      } catch (_) {}
-    }
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Colors.white,
-      builder: (ctx) {
-        String search = '';
-        List<Map<String, String>> results = List<Map<String, String>>.from(_orgNodesCache);
-
-        return StatefulBuilder(
-          builder: (context, setS) {
-            void doSearch(String q) {
-              final qq = q.trim().toLowerCase();
-              setS(() {
-                if (qq.isEmpty) {
-                  results = List<Map<String, String>>.from(_orgNodesCache);
-                } else {
-                  results = _orgNodesCache.where((m) {
-                    final label = (m['label'] ?? '').toLowerCase();
-                    final shortn = (m['shortname'] ?? '').toLowerCase();
-                    final path = (m['org_path'] ?? '').toLowerCase();
-                    return label.contains(qq) || shortn.contains(qq) || path.contains(qq);
-                  }).toList(growable: false);
-                }
-              });
-            }
-            return SafeArea(
-              child: SizedBox(
-                height: 420,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Select Audience (Visibility)', style: TextStyle(fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 8),
-                      Row(children: [
-                        Expanded(
-                          child: TextField(
-                            decoration: const InputDecoration(hintText: 'Search org units'),
-                            onChanged: (v) { search = v; },
-                            onSubmitted: (v) { doSearch(v); },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(onPressed: () => doSearch(search), child: const Text('Search')),
-                      ]),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: results.length,
-                          itemBuilder: (context, i) {
-                            final m = results[i];
-                            final path = m['org_path'] ?? '';
-                            final label = (m['shortname'] ?? m['label'] ?? path);
-                            final selected = temp.contains(path);
-                            return ListTile(
-                              dense: true,
-                              leading: Checkbox(
-                                value: selected,
-                                onChanged: (_) => setS(() {
-                                  if (selected) temp.remove(path); else temp.add(path);
-                                }),
-                              ),
-                              title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              subtitle: Text(path, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              onTap: () => setS(() {
-                                if (selected) temp.remove(path); else temp.add(path);
-                              }),
-                            );
-                          },
-                        ),
-                      ),
-                      Row(children: [
-                        Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
-                        const SizedBox(width: 8),
-                        Expanded(child: FilledButton(onPressed: () { setState(() { _selectedAudience
-                          ..clear()
-                          ..addAll(temp);
-                        }); Navigator.pop(context); }, child: const Text('Apply'))),
-                      ]),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  List<Map<String, String>> _flattenOrgTree(dynamic root) {
-    final out = <Map<String, String>>[];
-    void walk(dynamic node) {
-      if (node is Map) {
-        final path = (node['org_path'] ?? '').toString();
-        final label = (node['label'] ?? '').toString();
-        final shortn = (node['short_name'] ?? '').toString();
-        if (path.isNotEmpty) {
-          out.add({'org_path': path, 'label': label, 'shortname': shortn});
-        }
-        final children = node['children'];
-        if (children is List) {
-          for (final c in children) { walk(c); }
-        }
+  // ---- Stepper Navigation ----
+  void _nextStep() {
+    if (_step == 0) {
+      if (_name.text.trim().isEmpty ||
+          _capacity.text.trim().isEmpty ||
+          int.tryParse(_capacity.text.trim()) == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Please fill Event Name and a valid Max Registrants.')));
+        return;
       }
-      if (node is List) {
-        for (final c in node) { walk(c); }
+      if (_access == VisibilityAccess.custom &&
+          _facultyPaths.isEmpty &&
+          _clubPaths.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Please choose at least one faculty or club.')));
+        return;
       }
     }
-    walk(root);
-    return out;
+
+    if (_step == 1) {
+      if (_days.isEmpty) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Please add at least one day.')));
+        return;
+      }
+      final invalidTime = _days.any((d) {
+        final start =
+            DateTime(d.date.year, d.date.month, d.date.day, d.start.hour, d.start.minute);
+        final end =
+            DateTime(d.date.year, d.date.month, d.date.day, d.end.hour, d.end.minute);
+        return end.isBefore(start);
+      });
+      if (invalidTime) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('End time must be after start time.')));
+        return;
+      }
+      final first = _days.first;
+      final locMissing = _days.asMap().entries.any((e) {
+        final i = e.key;
+        final d = e.value;
+        final loc = (i == 0 || !d.sameAsDay1) ? d.location.trim() : first.location.trim();
+        return loc.isEmpty;
+      });
+      if (locMissing) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please fill Location for all days.')));
+        return;
+      }
+    }
+
+    setState(() => _step = (_step + 1).clamp(0, 3));
   }
 
-  // Category picker removed
+  void _prevStep() => setState(() => _step = (_step - 1).clamp(0, 3));
 
-  // ---- Role picker (เหมือน category) ----
-  Future<void> _openRolePicker() async {
-    final temp = _selectedRoles.toSet();
-    await showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => _multiSelectSheet(
-        title: 'Who can register?',
-        subtitle: 'Select one or more roles',
-        options: _allRoles,
-        initial: temp,
-        onDone: (result) => setState(() {
-          _selectedRoles
-            ..clear()
-            ..addAll(result);
-        }),
-      ),
-    );
-  }
-
-  // ---- Generic multi-select bottom sheet ----
-  Widget _multiSelectSheet({
-    required String title,
-    String? subtitle,
-    required List<String> options,
-    required Set<String> initial,
-    required ValueChanged<Set<String>> onDone,
-  }) {
-    final temp = initial.toSet();
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16, right: 16,
-        bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
-        top: 8,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(subtitle, style: const TextStyle(color: Colors.black54)),
-          ],
-          const SizedBox(height: 8),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              children: options.map((opt) {
-                final sel = temp.contains(opt);
-                return CheckboxListTile(
-                  value: sel,
-                  onChanged: (v) => setState(() => v! ? temp.add(opt) : temp.remove(opt)),
-                  title: Text(opt),
-                );
-              }).toList(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () {
-                    onDone(temp);
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Done'),
-                ),
-              ),
-            ],
-          ),
+  Map<String, dynamic> _buildVisibility(String postedOrgPath) {
+    if (_access == VisibilityAccess.public) {
+      return {
+        'access': 'public',
+        'audience': [],
+        'allow_user_ids': [],
+        'deny_user_ids': [],
+        'include_positions': [],
+        'exclude_positions': [],
+      };
+    }
+    if (_access == VisibilityAccess.org) {
+      return {
+        'access': 'org',
+        'audience': [
+          {'org_path': postedOrgPath, 'scope': 'exact'}
         ],
-      ),
-    );
-  }
-
-  // ---- Questionnaire nav (navigate เปล่า ๆ; รอคุณสร้างไฟล์ .dart และ route) ----
-  void _goQuestionnaire() {
-    try {
-      Navigator.of(context).pushNamed('/questionnaire');
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('TODO: add route /questionnaire และไฟล์หน้าแบบสอบถาม')),
-      );
+        'allow_user_ids': [],
+        'deny_user_ids': [],
+        'include_positions': [],
+        'exclude_positions': [],
+      };
     }
+    final audience = <Map<String, dynamic>>[];
+    for (final p in _facultyPaths) {
+      audience.add({'org_path': p, 'scope': 'subtree'});
+    }
+    for (final p in _clubPaths) {
+      audience.add({'org_path': p, 'scope': 'exact'});
+    }
+    return {
+      'access': 'org',
+      'audience': audience,
+      'allow_user_ids': [],
+      'deny_user_ids': [],
+      'include_positions': [],
+      'exclude_positions': [],
+    };
   }
 
-  // ---- Submit ----
   void _submit() {
-    // ต้องกรอกครบทุกช่อง ยกเว้น date/time ต้องมี >= 1 วัน
     String? err;
     if (_name.text.trim().isEmpty) err ??= 'Please enter Event Name';
-    if (_description.text.trim().isEmpty) err ??= 'Please enter Event Description';
-    if (_organizer.text.trim().isEmpty) err ??= 'Please enter Organizer';
-    // categories removed
-    if (_selectedRoles.isEmpty) err ??= 'Please select at least one Role';
     if (_capacity.text.trim().isEmpty || int.tryParse(_capacity.text.trim()) == null) {
       err ??= 'Please provide a valid number for Max Registrants';
     }
     if (_days.isEmpty) err ??= 'Please add at least one day';
-
+    if (_access == VisibilityAccess.custom && _facultyPaths.isEmpty && _clubPaths.isEmpty) {
+      err ??= 'Please choose at least one faculty or club';
+    }
     if (err != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
       return;
     }
 
-    // กระจายค่า Same as Day 1
+    // propagate Same as Day 1
     final first = _days.first;
     for (var i = 1; i < _days.length; i++) {
       final d = _days[i];
       if (d.sameAsDay1) {
         d.location = first.location;
-        d.note = first.note;
+        d.description = first.description;
         d.start = first.start;
         d.end = first.end;
       }
     }
 
     () async {
-      // Build backend payload (dto.EventRequestDTO)
       try {
         final orgPath = _selectedOrganizerPath ?? '';
         if (orgPath.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select Organizer org unit')));
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please select Organizer org unit')));
           return;
         }
 
-        // Resolve node_id from manageable orgs list (backend now includes node_id)
-        String? nodeId;
+        // Resolve node_id
+        String? node_id;
         for (final m in _manageableOrgs) {
-          if ((m['org_path'] ?? '') == orgPath) { nodeId = (m['node_id'] ?? m['id'] ?? m['_id'])?.toString(); break; }
+          if ((m['org_path'] ?? '') == orgPath) {
+            node_id = (m['node_id'] ?? m['NodeID'] ?? m['nodeId'] ?? m['NodeId'] ?? m['id'] ?? m['_id'])?.toString();
+            break;
+          }
         }
-        if (nodeId == null || nodeId!.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Organizer node_id not found; reload Manageable Orgs')));
+        if (node_id == null || node_id!.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Organizer node_id not found; reload Manageable Orgs')));
           return;
         }
 
-        // Pick a role (position_key) from my memberships matching orgPath
+        // Pick a role (position_key)
         final myMems = await DatabaseService().getMyMembershipsFiber();
         String? posKey;
+        String? labelForPostedAs;
         for (final m in myMems) {
-          if ((m['org_path'] ?? '') == orgPath && (m['position_key'] ?? '').toString().isNotEmpty) {
+          if ((m['org_path'] ?? '') == orgPath &&
+              (m['position_key'] ?? '').toString().isNotEmpty) {
             posKey = m['position_key'].toString();
             break;
           }
         }
-        posKey ??= (myMems.isNotEmpty ? (myMems.first['position_key']?.toString()) : null);
+        try {
+          labelForPostedAs = _manageableOrgs
+              .firstWhere((m) => (m['org_path'] ?? '') == orgPath, orElse: () => const {})['label']
+              ?.toString();
+        } catch (_) {}
+        posKey ??=
+            (myMems.isNotEmpty ? (myMems.first['position_key']?.toString()) : null);
         if (posKey == null || posKey!.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No eligible role found to post as organizer')));
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No eligible role found to post as organizer')));
           return;
         }
 
-        // Visibility mapping
-        Map<String, dynamic> visibility;
-        if (_selectedAudience.isEmpty) {
-          visibility = {'access': 'public'};
-        } else {
-          visibility = {
-            'access': 'org',
-            'audience': _selectedAudience.map((p) => {'org_path': p, 'scope': 'exact'}).toList(),
-          };
-        }
-
-        // Schedules mapping
+        // Schedules mapping (UTC ISO8601)
         final schedules = _days.map((d) {
-          final dateOnly = DateTime(d.date.year, d.date.month, d.date.day).toUtc();
           final tStart = DateTime(d.date.year, d.date.month, d.date.day, d.start.hour, d.start.minute).toUtc();
           final tEnd   = DateTime(d.date.year, d.date.month, d.date.day, d.end.hour, d.end.minute).toUtc();
+          final dateOnly = DateTime(d.date.year, d.date.month, d.date.day).toUtc();
           return {
             'date': dateOnly.toIso8601String(),
             'time_start': tStart.toIso8601String(),
             'time_end': tEnd.toIso8601String(),
             'location': d.location,
-            'description': d.note,
+            'description': d.description,
           };
         }).toList();
 
+        final visibility = _buildVisibility(orgPath);
+
+        // --------- Payload: สร้างอีเวนต์แบบ DRAFT/inactive และมีฟอร์มหรือไม่ตามคำถามที่ใส่ ---------
         final payload = {
-          'node_id': nodeId,
+          'node_id': node_id,
+          'NodeID': node_id,
           'topic': _name.text.trim(),
-          'description': _description.text.trim(),
+          'description': '',
           'max_participation': _toInt(_capacity.text),
-          'posted_as': { 'org_path': orgPath, 'position_key': posKey },
-          'visibility': visibility,
+          'posted_as': {'org_path': orgPath, 'position_key': posKey, 'label': labelForPostedAs ?? ''},
           'org_of_content': orgPath,
-          'status': 'active',
-          'have_form': false,
+          'status': 'inactive',
+          'have_form': _questions.isNotEmpty,
           'schedules': schedules,
+          'visibility': visibility, 
         };
 
         final res = await DatabaseService().createEventFiber(
           payload,
-          imageBytes: _coverBytes,
-          imageFilename: 'cover.jpg',
+          imageBytes: _coverBytes,                 
+          imageFilename: 'cover.jpg',             
           postedAs: {'org_path': orgPath, 'position_key': posKey},
-          nodeId: nodeId,
+          nodeId: node_id,
         );
-        if (mounted) {
-          await showDialog(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: const Text('Event created'),
-              content: Text('ID: ${(res['event']?['id'] ?? res['event']?['_id'] ?? res['id'] ?? '')}'),
-              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-            ),
-          );
-          Navigator.pop(context);
+        if (!mounted) return;
+
+        // Extract eventId robustly across various backend response shapes
+        String _pickId(Map<String, dynamic> m) {
+          for (final k in const [
+            'event_id', 'eventId', 'EventID', 'EventId',
+            'id', '_id'
+          ]) {
+            final v = m[k];
+            if (v == null) continue;
+            final s = v.toString();
+            if (s.isNotEmpty) return s;
+          }
+          return '';
         }
+
+        String eventId = '';
+        try {
+          if (res is Map<String, dynamic>) {
+            // Prefer nested 'event' or 'data' object if present
+            final Map<String, dynamic>? inner = (() {
+              final ev = res['event'];
+              if (ev is Map) return Map<String, dynamic>.from(ev);
+              final data = res['data'];
+              if (data is Map) return Map<String, dynamic>.from(data);
+              return null;
+            })();
+            if (inner != null) {
+              eventId = _pickId(inner);
+            }
+            if (eventId.isEmpty) {
+              eventId = _pickId(res);
+            }
+          } else {
+            eventId = '';
+          }
+        } catch (_) {
+          eventId = '';
+        }
+
+        // Flow สร้างฟอร์มคำถาม: init + replace questions
+        if (eventId.isNotEmpty && _questions.isNotEmpty) {
+          try {
+            await DatabaseService().initializeFormFiber(eventId); // POST /event/:id/form/initialize
+
+            final List<Map<String, dynamic>> builtQuestions = _questions
+                .asMap()
+                .entries
+                .map((e) => e.value.toJson(e.key + 1))
+                .where((q) => (q['question_text'] as String).isNotEmpty)
+                .toList();
+
+            if (builtQuestions.isNotEmpty) {
+              // POST /event/:id/form/questions (replace all)
+              await DatabaseService().createFormQuestionsFiber(eventId, builtQuestions);
+            }
+          } catch (e) {
+            // ไม่ fail ทั้ง flow แค่แจ้งเตือน
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Form setup warning: $e')),
+            );
+          }
+        }
+
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Event created'),
+            content: Text('ID: ${eventId.isEmpty ? '(unknown)' : eventId}'),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+          ),
+        );
+        Navigator.pop(context);
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Create failed: $e')));
@@ -516,230 +437,307 @@ class _CreateEventPageState extends State<CreateEventPage> {
     }();
   }
 
-  // ---- UI ----
+  // ===================== UI (Steps) =====================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
-        title: const Text('Create Event'),
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.bg,
         surfaceTintColor: Colors.transparent,
         elevation: 0.5,
+        centerTitle: true,
+        title: const Text(
+          'Create Event',
+          style: TextStyle(color: AppColors.deepGreen, fontWeight: FontWeight.w800, fontSize: 20),
+        ),
+        iconTheme: const IconThemeData(color: AppColors.deepGreen),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.pop(context),
+          tooltip: 'Back',
+        ),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          children: [
-            // Add Photos
-            _titleRow('Add Photos', Icons.photo_library_outlined, const Color(0xFFFF4D96)),
-            const SizedBox(height: 8),
-            _coverPickerBox(),
-            const SizedBox(height: 16),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+        children: [
+          Center(child: Text(_stepTitle, style: const TextStyle(color: AppColors.deepGreen, fontSize: 16, fontWeight: FontWeight.w700))),
+          const SizedBox(height: 10),
+          Center(child: _CenteredStepper(step: _step)),
+          const SizedBox(height: 12),
 
-            // Event Name
-            _titleRow('Event Name', Icons.badge_outlined, const Color(0xFF7C4DFF)),
-            const SizedBox(height: 8),
-            TextFormField(controller: _name, decoration: const InputDecoration(hintText: 'e.g. Tech Event')),
-            const SizedBox(height: 16),
+          if (_step == 0) _stepBasic(),
+          if (_step == 1) _stepDetails(),
+          if (_step == 2) _stepQuestionnaireInline(),
+          if (_step == 3) _stepPreview(),
 
-            // Event Description
-            _titleRow('Event Description', Icons.description_outlined, const Color(0xFF43A047)),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _description,
-              maxLines: 4,
-              decoration: const InputDecoration(hintText: 'Describe your event...'),
-            ),
-            const SizedBox(height: 16),
-
-            // Categories section removed
-
-            // Roles (NEW)
-            _titleRow('Who can register?', Icons.verified_user_outlined, const Color(0xFF9C27B0)),
-            const SizedBox(height: 8),
-            if (_selectedRoles.isNotEmpty)
-              Wrap(
-                spacing: 8,
-                runSpacing: -4,
-                children: _selectedRoles
-                    .map((r) => Chip(
-                          label: Text(r),
-                          onDeleted: () => setState(() => _selectedRoles.remove(r)),
-                        ))
-                    .toList(),
-              ),
-            if (_selectedRoles.isNotEmpty) const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: _openRolePicker,
-                icon: const Icon(Icons.add),
-                label: const Text('Add role'),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Organizer (dropdown, manageable orgs)
-            _titleRow('Organizer', Icons.apartment_outlined, const Color(0xFFFF9800)),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              isExpanded: true,
-              value: _selectedOrganizerPath,
-              hint: const Text('Select organizer org unit'),
-              menuMaxHeight: 320,
-              items: _manageableOrgs.map((m) {
-                final path = (m['org_path'] ?? '').toString();
-                final label = (m['short_name'] ?? m['shortname'] ?? m['name'] ?? path).toString();
-                return DropdownMenuItem<String>(
-                  value: path,
-                  child: Text(label, overflow: TextOverflow.ellipsis),
-                );
-              }).toList(),
-              onChanged: (v) => setState(() => _selectedOrganizerPath = v),
-            ),
-            const SizedBox(height: 16),
-
-            // Visibility (Audience) — dropdown-like launcher with fixed-height scrollable sheet
-            _titleRow('Visibility (Audience)', Icons.lock_open_outlined, const Color(0xFF6D4C41)),
-            const SizedBox(height: 8),
-            _ghostButton(
-              onTap: _openAudiencePicker,
-              child: Row(children: [
-                const Icon(Icons.groups_2_outlined, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _selectedAudience.isEmpty
-                      ? 'Select audience org units'
-                      : 'Selected: ${_selectedAudience.length} orgs',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              if (_step > 0)
+                Expanded(child: OutlinedButton(onPressed: _prevStep, child: const Text('Back'))),
+              if (_step > 0) const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _step == 3 ? _submit : _nextStep,
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.deepGreen, foregroundColor: AppColors.bg),
+                  child: Text(_step == 3 ? 'Create Event' : 'Next'),
                 ),
-                const SizedBox(width: 8),
-                const Icon(Icons.arrow_drop_down_rounded),
-              ]),
-            ),
-            if (_selectedAudience.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: -4,
-                children: _selectedAudience.map((p) => Chip(
-                  label: Text(p),
-                  onDeleted: () => setState(() => _selectedAudience.remove(p)),
-                )).toList(),
               ),
             ],
-            const SizedBox(height: 16),
+          ),
+        ],
+      ),
+    );
+  }
 
-            // Max Registrants
-            _titleRow('Max Registrants', Icons.people_alt_outlined, const Color(0xFF4FC3F7)),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _capacity,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(hintText: 'Number of people that can register'),
-            ),
-            const SizedBox(height: 16),
-
-            // Date & Time
-            _titleRow('Date & Time', Icons.event_outlined, const Color(0xFF8BC34A)),
-            const SizedBox(height: 8),
-            _dateTimeSection(),
-
-            const SizedBox(height: 16),
-            _titleRow('Questionnaire', Icons.ballot_outlined, const Color(0xFF9C27B0)),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _goQuestionnaire, // navigate เปล่า ๆ
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text('Create questionnaire for this event'),
-            ),
-            const SizedBox(height: 20),
-
-            // Footer buttons
-            Row(
+  // ===== Step 0: Basic Info =====
+  Widget _stepBasic() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Add Photos'),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.cardGrey,
+            border: Border.all(color: AppColors.chipGrey),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.all(10),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _cancelDialog,
-                    child: const Text('Cancel'),
-                  ),
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: _coverBytes == null
+                      ? Container(
+                          color: AppColors.cardGrey,
+                          child: const Center(
+                            child: Icon(Icons.image_outlined, size: 56, color: AppColors.sage),
+                          ),
+                        )
+                      : Image.memory(_coverBytes!, fit: BoxFit.cover),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
+                Positioned(
+                  right: 12,
+                  bottom: 12,
                   child: FilledButton.icon(
-                    onPressed: _submit,
-                    icon: const Icon(Icons.check_circle),
-                    label: const Text('Create Event'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.deepGreen,
+                      foregroundColor: AppColors.bg,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _pickCover,
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    label: const Text('Add photo'),
                   ),
                 ),
               ],
             ),
-          ],
+          ),
         ),
-      ),
-    );
-  }
+        const SizedBox(height: 16),
 
-  /* --- UI Pieces --- */
-  Widget _titleRow(String text, IconData icon, Color color) {
-    return Row(
-      children: [
-        Expanded(child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14))),
-        Icon(icon, color: color),
+        _sectionTitle('Event Name'),
+        const SizedBox(height: 8),
+        _boxedField(
+          controller: _name, 
+          hint: 'Your event name...', 
+          suffixIcon: Icons.badge_outlined,
+        ),
+        const SizedBox(height: 16),
+
+        _sectionTitle('Select who can register'),
+        const SizedBox(height: 8),
+
+        VisibilitySelector(
+          value: _access,
+          postedOrgPath: _selectedOrganizerPath,
+          facultySelected: _facultyPaths,
+          clubSelected: _clubPaths,
+          onAccessChanged: (v) => setState(() => _access = v),
+          onFacultyChanged: (set) => setState(() => _facultyPaths = set),
+          onClubChanged: (set) => setState(() => _clubPaths = set),
+        ),
+
+        const SizedBox(height: 16),
+
+        _sectionTitle('Organizer'),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          isExpanded: true,
+          value: _selectedOrganizerPath,
+          hint: const Text('Select organizer org unit'),
+          menuMaxHeight: 320,
+          items: _manageableOrgs.map((m) {
+            final path = (m['org_path'] ?? '').toString();
+            final label = (m['short_name'] ?? m['shortname'] ?? m['name'] ?? path).toString();
+            return DropdownMenuItem<String>(
+              value: path,
+              child: Text(label, overflow: TextOverflow.ellipsis),
+            );
+          }).toList(),
+          onChanged: (v) => setState(() => _selectedOrganizerPath = v),
+        ),
+
+        const SizedBox(height: 16),
+
+        _sectionTitle('Max Registrants'),
+        const SizedBox(height: 8),
+        _boxedField(
+          controller: _capacity,
+          hint: 'Number of people that can register',
+          suffixIcon: Icons.people_alt_outlined,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        ),
       ],
     );
   }
 
-  // กล่องเลือกรูป 16:9 ตรงกลางมี icon image + ปุ่ม "+ Add Photo" มุมขวาล่าง
-  Widget _coverPickerBox() {
+  // ===== Step 1: Details =====
+  Widget _stepDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Date & Time'),
+        const SizedBox(height: 8),
+        _dateTimeSection(),
+      ],
+    );
+  }
+
+  // ===== Step 2: Questionnaire =====
+  Widget _stepQuestionnaireInline() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Questionnaire'),
+        const SizedBox(height: 8),
+        for (int i = 0; i < _questions.length; i++) ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.cardGrey,
+              border: Border.all(color: AppColors.chipGrey),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Text('Q${i + 1}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.deepGreen)),
+                  const Spacer(),
+                  const Text('Required', style: TextStyle(fontSize: 12, color: AppColors.deepGreen)),
+                  Switch(
+                    value: _questions[i].isRequired,
+                    activeColor: AppColors.deepGreen,
+                    onChanged: (v) => setState(() => _questions[i].isRequired = v),
+                  ),
+                  IconButton(
+                    onPressed: () => setState(() => _questions.removeAt(i)),
+                    icon: const Icon(Icons.delete_outline, color: AppColors.sage),
+                    tooltip: 'Remove',
+                  ),
+                ]),
+                const SizedBox(height: 8),
+                _boxedSmall(
+                  child: TextFormField(
+                    initialValue: _questions[i].title,
+                    decoration: InputDecoration(
+                      hintText: _questions[i].isRequired ? 'Question title *' : 'Question title',
+                      border: InputBorder.none,
+                    ),
+                    onChanged: (v) => _questions[i].title = v,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () => setState(() => _questions.add(_FormQuestion())),
+            icon: const Icon(Icons.add),
+            label: const Text('Add question'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===== Step 3: Preview =====
+  Widget _stepPreview() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Preview'),
+        const SizedBox(height: 8),
+        _detailLikePreviewCard(),
+      ],
+    );
+  }
+
+  /* --- UI helpers --- */
+  Widget _sectionTitle(String text) => Text(
+        text,
+        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.deepGreen),
+      );
+
+  Widget _boxedField({
+    required TextEditingController controller,
+    required String hint,
+    int maxLines = 1,
+    IconData? suffixIcon,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+  }) {
+    return Stack(
+      alignment: Alignment.centerRight,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: const Color.fromARGB(0, 255, 255, 255),
+            border: Border.all(color: AppColors.chipGrey),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: TextFormField(
+            controller: controller,
+            maxLines: maxLines,
+            keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
+            decoration: const InputDecoration(
+              hintText: '',
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.only(right: 40),
+            ).copyWith(hintText: hint),
+          ),
+        ),
+        if (suffixIcon != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Icon(suffixIcon, color: AppColors.sage),
+          ),
+      ],
+    );
+  }
+
+  Widget _boxedSmall({required Widget child}) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: Colors.grey.shade300),
+        color: const Color.fromARGB(0, 255, 255, 255),
+        border: Border.all(color: AppColors.chipGrey),
         borderRadius: BorderRadius.circular(16),
       ),
-      padding: const EdgeInsets.all(10),
-      child: Stack(
-        children: [
-          AspectRatio(
-            aspectRatio: 16 / 9, // เท่ากับใน event_detail_page.dart
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: GestureDetector(
-                onTap: _pickCover,
-                child: Container(
-                  color: const Color(0xFFF8F3F7),
-                  child: _coverBytes == null
-                      ? const Center(
-                          child: Icon(Icons.image_outlined, size: 56, color: Colors.black26),
-                        )
-                      : Image.memory(_coverBytes!, fit: BoxFit.cover),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 10,
-            bottom: 10,
-            child: ElevatedButton.icon(
-              onPressed: _pickCover,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFFFF4D96),
-                elevation: 2,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              ),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Photo', style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: child,
     );
   }
 
@@ -762,32 +760,47 @@ class _CreateEventPageState extends State<CreateEventPage> {
     return Column(children: children);
   }
 
+  void _addDay() {
+    final base = _days.isEmpty ? DateTime.now() : _days.last.date.add(const Duration(days: 1));
+    setState(() {
+      _days.add(DayPlan(
+        date: base,
+        start: const TimeOfDay(hour: 9, minute: 0),
+        end: const TimeOfDay(hour: 10, minute: 0),
+      ));
+    });
+  }
+
   Widget _dayCard(int i) {
     final d = _days[i];
     final disabled = i > 0 && d.sameAsDay1;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardGrey,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: AppColors.chipGrey),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Day ${i + 1}', style: const TextStyle(fontWeight: FontWeight.w800)),
+            Text('Day ${i + 1}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.deepGreen)),
             const Spacer(),
             if (i > 0)
               Row(
                 children: [
-                  const Text('Same as Day 1', style: TextStyle(fontSize: 12)),
-                  Switch(value: d.sameAsDay1, onChanged: (v) => setState(() => d.sameAsDay1 = v)),
+                  const Text('Same as Day 1', style: TextStyle(fontSize: 12, color: AppColors.deepGreen)),
+                  Switch(
+                    value: d.sameAsDay1,
+                    activeColor: AppColors.deepGreen,
+                    onChanged: (v) => setState(() => d.sameAsDay1 = v),
+                  ),
                 ],
               ),
-            if (_days.length > 1)
+            if (_days.length > 1 && i > 0)
               IconButton(
-                icon: const Icon(Icons.delete_outline),
+                icon: const Icon(Icons.delete_outline, color: AppColors.sage),
                 onPressed: () => setState(() => _days.removeAt(i)),
               ),
           ]),
@@ -797,9 +810,9 @@ class _CreateEventPageState extends State<CreateEventPage> {
               child: _ghostButton(
                 onTap: () => _pickDate(i),
                 child: Row(children: [
-                  const Icon(Icons.calendar_today_rounded, size: 18),
+                  const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.sage),
                   const SizedBox(width: 8),
-                  Text(_fmtDate(d.date)),
+                  Text(_fmtDate(d.date), style: const TextStyle(color: AppColors.deepGreen)),
                 ]),
               ),
             ),
@@ -810,9 +823,9 @@ class _CreateEventPageState extends State<CreateEventPage> {
               child: _ghostButton(
                 onTap: () => _pickTime(i, start: true),
                 child: Row(children: [
-                  const Icon(Icons.access_time_filled_rounded, size: 18),
+                  const Icon(Icons.access_time_filled_rounded, size: 18, color: AppColors.sage),
                   const SizedBox(width: 8),
-                  Text('Start: ${_fmtTime(d.start)}'),
+                  Text('Start: ${_fmtTime(d.start)}', style: const TextStyle(color: AppColors.deepGreen)),
                 ]),
               ),
             ),
@@ -821,9 +834,9 @@ class _CreateEventPageState extends State<CreateEventPage> {
               child: _ghostButton(
                 onTap: () => _pickTime(i, start: false),
                 child: Row(children: [
-                  const Icon(Icons.schedule_rounded, size: 18),
+                  const Icon(Icons.schedule_rounded, size: 18, color: AppColors.sage),
                   const SizedBox(width: 8),
-                  Text('End: ${_fmtTime(d.end)}'),
+                  Text('End: ${_fmtTime(d.end)}', style: const TextStyle(color: AppColors.deepGreen)),
                 ]),
               ),
             ),
@@ -836,23 +849,26 @@ class _CreateEventPageState extends State<CreateEventPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _titleRow('Location', Icons.location_on_outlined, const Color(0xFFEC407A)),
+                  _sectionTitle('Location *'),
                   const SizedBox(height: 6),
-                  TextField(
-                    decoration: const InputDecoration(hintText: 'Add location'),
-                    controller: TextEditingController(text: d.location)
-                      ..selection = TextSelection.collapsed(offset: d.location.length),
-                    onChanged: (v) => d.location = v,
+                  _boxedSmall(
+                    child: TextFormField(
+                      initialValue: d.location,
+                      decoration: const InputDecoration(hintText: 'Add location', border: InputBorder.none),
+                      onChanged: (v) => d.location = v,
+                    ),
                   ),
                   const SizedBox(height: 10),
-                  _titleRow('Notes', Icons.sticky_note_2_outlined, const Color(0xFF26A69A)),
+                  _sectionTitle('Notes (optional)'),
                   const SizedBox(height: 6),
-                  TextField(
-                    maxLines: 3,
-                    decoration: const InputDecoration(hintText: 'Additional notes'),
-                    controller: TextEditingController(text: d.note)
-                      ..selection = TextSelection.collapsed(offset: d.note.length),
-                    onChanged: (v) => d.note = v,
+                  _boxedSmall(
+                    child: TextFormField(
+                      maxLines: 3,
+                      initialValue: d.description,
+                      decoration: const InputDecoration(
+                          hintText: 'Additional notes (optional)', border: InputBorder.none),
+                      onChanged: (v) => d.description = v,
+                    ),
                   ),
                 ],
               ),
@@ -863,17 +879,6 @@ class _CreateEventPageState extends State<CreateEventPage> {
     );
   }
 
-  void _addDay() {
-    final now = DateTime.now();
-    setState(() {
-      _days.add(DayPlan(
-        date: DateTime(now.year, now.month, now.day),
-        start: const TimeOfDay(hour: 9, minute: 0),
-        end: const TimeOfDay(hour: 10, minute: 0),
-      ));
-    });
-  }
-
   Widget _ghostButton({required Widget child, required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
@@ -881,8 +886,8 @@ class _CreateEventPageState extends State<CreateEventPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: Colors.grey.shade300),
+          color: AppColors.cardGrey,
+          border: Border.all(color: AppColors.chipGrey),
           borderRadius: BorderRadius.circular(12),
         ),
         child: child,
@@ -890,50 +895,173 @@ class _CreateEventPageState extends State<CreateEventPage> {
     );
   }
 
-  void _cancelDialog() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Cancel'),
-        content: const Text('Discard all changes?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes')),
+  // ===== Preview card =====
+  Widget _detailLikePreviewCard() {
+    // Ensure selected index stays in range
+    final int safeIndex = _days.isEmpty
+        ? 0
+        : _previewDayIndex.clamp(0, _days.length - 1);
+
+    final pills = <Widget>[];
+    for (int i = 0; i < _days.length; i++) {
+      final d = _days[i];
+      final bool selected = i == safeIndex;
+      pills.add(Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() => _previewDayIndex = i),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.deepGreen : AppColors.cardGrey,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.chipGrey),
+            ),
+            child: Text(
+              _fmtDate(d.date),
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: selected ? AppColors.bg : AppColors.deepGreen),
+            ),
+          ),
+        ),
+      ));
+    }
+
+    final first = _days.first;
+    final selected = _days[safeIndex];
+    final TimeOfDay shownStart = (safeIndex > 0 && selected.sameAsDay1) ? first.start : selected.start;
+    final TimeOfDay shownEnd = (safeIndex > 0 && selected.sameAsDay1) ? first.end : selected.end;
+    final String shownLocation = (safeIndex > 0 && selected.sameAsDay1)
+        ? first.location.trim()
+        : selected.location.trim();
+    final timeText = '${_fmtTime(shownStart)} - ${_fmtTime(shownEnd)}';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardGrey,
+        border: Border.all(color: AppColors.chipGrey),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: _coverBytes == null
+                ? Container(
+                    color: AppColors.cardGrey,
+                    child: const Center(child: Icon(Icons.image, size: 40, color: AppColors.sage)),
+                  )
+                : Image.memory(_coverBytes!, fit: BoxFit.cover),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: pills)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time, size: 18, color: AppColors.sage),
+                    const SizedBox(width: 8),
+                    Text(timeText, style: const TextStyle(color: AppColors.deepGreen)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _name.text.trim().isEmpty ? 'Event Title' : _name.text.trim(),
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.deepGreen),
+                ),
+                const SizedBox(height: 12),
+                if (shownLocation.isNotEmpty)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 18, color: AppColors.sage),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(shownLocation,
+                            style: const TextStyle(color: AppColors.deepGreen, height: 1.35)),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
-    if (ok == true) Navigator.pop(context);
+  }
+}
+
+// ===== Centered Stepper =====
+class _CenteredStepper extends StatelessWidget {
+  final int step;
+  const _CenteredStepper({required this.step});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        const double dot = 34;
+        const double gap = 12;
+
+        final double maxW = c.maxWidth;
+        final double line = ((maxW - (4 * dot) - (3 * gap * 2)) / 3).clamp(40.0, 160.0);
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _dot(0, active: step >= 0, current: step == 0),
+            const SizedBox(width: gap),
+            _line(width: line, active: step >= 1),
+            const SizedBox(width: gap),
+            _dot(1, active: step >= 1, current: step == 1),
+            const SizedBox(width: gap),
+            _line(width: line, active: step >= 2),
+            const SizedBox(width: gap),
+            _dot(2, active: step >= 2, current: step == 2),
+            const SizedBox(width: gap),
+            _line(width: line, active: step >= 3),
+            const SizedBox(width: gap),
+            _dot(3, active: step >= 3, current: step == 3),
+          ],
+        );
+      },
+    );
   }
 
-  String _prettyJson(Map<String, dynamic> map, [int indent = 2]) {
-    final sp = ' ' * indent;
-    String enc(dynamic v, int lv) {
-      if (v is Map) {
-        final ks = v.keys.toList();
-        final b = StringBuffer()..writeln('{');
-        for (var i = 0; i < ks.length; i++) {
-          final k = ks[i];
-          b.write('${sp * (lv + 1)}"$k": ${enc(v[k], lv + 1)}');
-          if (i != ks.length - 1) b.writeln(',');
-        }
-        b.writeln();
-        b.write('${sp * lv}}');
-        return b.toString();
-      } else if (v is List) {
-        final b = StringBuffer()..writeln('[');
-        for (var i = 0; i < v.length; i++) {
-          b.write('${sp * (lv + 1)}${enc(v[i], lv + 1)}');
-          if (i != v.length - 1) b.writeln(',');
-        }
-        b.writeln();
-        b.write('${sp * lv}]');
-        return b.toString();
-      } else if (v is String) {
-        return '"${v.replaceAll('"', '\\"')}"';
-      } else {
-        return v.toString();
-      }
-    }
-    return enc(map, 0);
+  Widget _line({required double width, required bool active}) {
+    return Container(
+      width: width,
+      height: 3,
+      decoration: BoxDecoration(
+        color: active ? AppColors.deepGreen : AppColors.chipGrey,
+        borderRadius: BorderRadius.circular(999),
+      ),
+    );
+  }
+
+  Widget _dot(int index, {required bool active, required bool current}) {
+    return Container(
+      height: 34,
+      width: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: current ? AppColors.bg : (active ? AppColors.deepGreen : AppColors.sage),
+        border: Border.all(color: AppColors.deepGreen, width: current ? 3 : 0),
+        shape: BoxShape.circle,
+      ),
+      child: current
+          ? Text('${index + 1}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.deepGreen))
+          : (active
+              ? const Icon(Icons.check, size: 18, color: AppColors.bg)
+              : Text('${index + 1}', style: const TextStyle(color: AppColors.bg))),
+    );
   }
 }

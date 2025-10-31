@@ -157,7 +157,8 @@ class Post {
       profilePic: (profile ?? '').toString(),
       username: (j['username'] ?? j['name'] ?? j['uid'] ?? '').toString(),
       category: _firstCategory(j['category']),
-      message: (j['message'] ?? j['post_text'] ?? j['postText'] ?? '').toString(),
+      // Prefer sanitized text from API (postText/post_text) over raw message
+      message: (j['postText'] ?? j['post_text'] ?? j['message'] ?? '').toString(),
       likeCount: likeCount,
       comment: commentCount,
       isLiked: ((j['is_liked'] ?? j['liked'])?.toString() == 'true'),
