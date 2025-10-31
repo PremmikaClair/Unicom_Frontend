@@ -13,6 +13,7 @@ import 'request_page.dart';
 import 'manage_participants_page.dart';
 import '../../services/database_service.dart';
 import '../noti/notifications_page.dart'; 
+import 'history_create_event_page.dart';
 
 /// แทนที่ด้วยแหล่งจริงของ roles ในแอปคุณ เช่น จาก Provider/Bloc/AuthService
 class CurrentUser {
@@ -272,6 +273,13 @@ class _EventsPageState extends State<EventsPage> {
       MaterialPageRoute(builder: (_) => const ManageParticipantsPage()),
     );
     if (mounted) _loadPendingRequests(); // refresh badge (optional)
+  }
+
+  // เปิดหน้าประวัติอีเวนต์ที่เราสร้างเอง
+  void _goHistoryCreated() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const HistoryCreateEventPage()),
+    );
   }
 
   // ✅ นำทางไปหน้า Notifications
@@ -570,6 +578,7 @@ class _EventsPageState extends State<EventsPage> {
               onCreate: _goCreateEvent,
               onCheckIn: _goCheckIn,
               onOpenRequests: _goRequests,
+              onOpenHistory: _goHistoryCreated,
               pendingCount: _pendingRequests,
               mainColor: AppColors.sage,
             )
@@ -810,6 +819,7 @@ class _FabMenu extends StatefulWidget {
   final VoidCallback onCreate;
   final VoidCallback onCheckIn;
   final VoidCallback onOpenRequests;
+  final VoidCallback onOpenHistory;
   final int pendingCount;
   final Color mainColor;
 
@@ -817,6 +827,7 @@ class _FabMenu extends StatefulWidget {
     required this.onCreate,
     required this.onCheckIn,
     required this.onOpenRequests,
+    required this.onOpenHistory,
     required this.pendingCount,
     this.mainColor = AppColors.sage,
   });
@@ -956,6 +967,40 @@ class _FabMenuState extends State<_FabMenu> with SingleTickerProviderStateMixin 
                               height: 50,
                               child:
                                   Icon(Icons.event_available_rounded, size: 22, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                // >> History (ประมาณ 180° ไปทางซ้าย)
+                AnimatedBuilder(
+                  animation: _curve,
+                  builder: (_, __) {
+                    final rad = 180 * 3.1415926535 / 180.0;
+                    final offset = Offset.fromDirection(rad, 72 * _curve.value);
+                    return Transform.translate(
+                      offset: offset,
+                      child: Opacity(
+                        opacity: _curve.value.clamp(0.0, 1.0),
+                        child: Material(
+                          color: widget.mainColor,
+                          elevation: 3,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            splashColor: Colors.transparent,
+                            highlightColor: Colors.transparent,
+                            onTap: () {
+                              _toggle();
+                              widget.onOpenHistory();
+                            },
+                            child: const SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: Icon(Icons.history_rounded, size: 22, color: Colors.white),
                             ),
                           ),
                         ),
