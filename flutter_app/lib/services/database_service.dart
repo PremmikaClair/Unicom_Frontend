@@ -583,7 +583,7 @@ class DatabaseService {
         'org_short': orgShort,
         'position_key': posKey ?? '',
         'label': label.isNotEmpty ? label : '${posKey ?? ''} • ${orgPath ?? ''}',
-        'inactive': true,
+        'active': true,
       };
     }).toList();
   }
@@ -920,8 +920,7 @@ class DatabaseService {
     Map<String, dynamic>? postedAs, // { org_path, position_key }
     String? nodeId,
   }) async {
-    // Use trailing slash to match backend route exactly: POST /event/
-    final uri = _buildUri('/event/', {});
+    final uri = _buildUri('/event', {});
     // Always use multipart/form-data per backend spec, even without image.
     final req = http.MultipartRequest('POST', uri);
     req.headers.addAll(_headers(const {'Accept': 'application/json'}));
