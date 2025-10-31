@@ -618,7 +618,7 @@ class PostCard extends StatelessWidget {
   }
 
   List<InlineSpan> _buildHashtagSpans(BuildContext context, String text, TextStyle baseStyle) {
-    final re = RegExp(r"#[A-Za-z0-9_]+", multiLine: true);
+    final re = RegExp(r'(^|(?<=\s))#([\u0E00-\u0E7FA-Za-z0-9_]+)', unicode: true, multiLine: true);
     final spans = <InlineSpan>[];
     int idx = 0;
     for (final m in re.allMatches(text)) {
