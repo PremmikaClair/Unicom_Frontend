@@ -1127,6 +1127,68 @@ class DatabaseService {
     }
   }
 
+  // Cancel join request (REQUEST mode)
+  // Preferred: PUT /event/participant/status with event_id (+ optional user_id)
+  // Fallback: legacy DELETE routes.
+  Future<void> cancelEventJoinRequestFiber(String eventId) async {
+    // 1) Try without user_id (server reads from token)
+    final uriNoUser = _buildUri('/event/participant/status', {});
+    try {
+      final res = await _client
+          .put(
+            uriNoUser,
+            headers: _headers(const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            }),
+            body: jsonEncode({'event_id': eventId, 'status': 'reject'}),
+          )
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200 || res.statusCode == 201) return;
+    } catch (_) {
+      // try next path
+    }
+
+    // 2) If backend needs user_id, fetch and try again
+    try {
+      final me = await getMeFiber();
+      final userId = (me['_id'] ?? me['id'] ?? '').toString();
+      if (userId.isNotEmpty) {
+        final uriWithUser = _buildUri('/event/participant/status', {});
+        final res = await _client
+            .put(
+              uriWithUser,
+              headers: _headers(const {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              }),
+              body: jsonEncode({'user_id': userId, 'event_id': eventId, 'status': 'reject'}),
+            )
+            .timeout(const Duration(seconds: 12));
+        if (res.statusCode == 200 || res.statusCode == 201) return;
+      }
+    } catch (_) {
+      // fall through to legacy
+    }
+
+    // 3) Legacy fallback routes
+    final fallbacks = <Uri>[
+      _buildUri('/event/request/${Uri.encodeComponent(eventId)}', {}),
+      _buildUri('/event/participate/${Uri.encodeComponent(eventId)}', {'cancel': 'true'}),
+    ];
+    HttpException? lastErr;
+    for (final uri in fallbacks) {
+      try {
+        final res = await _client.delete(uri, headers: _headers()).timeout(const Duration(seconds: 12));
+        if (res.statusCode == 200 || res.statusCode == 204) return;
+        lastErr = HttpException('DELETE $uri -> ${res.statusCode}: ${res.body}');
+      } catch (e) {
+        lastErr = HttpException('DELETE $uri failed: $e');
+      }
+    }
+    throw lastErr ?? const HttpException('Cancel request failed');
+  }
+
   // GET /event/:eventId/form/questions
   Future<List<Map<String, dynamic>>> getEventFormQuestionsFiber(String eventId) async {
     final uri = _buildUri('/event/${Uri.encodeComponent(eventId)}/form/questions', {});

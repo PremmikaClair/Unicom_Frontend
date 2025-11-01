@@ -193,7 +193,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
         return _status == EventRegStatus.joined ? "YOU'RE IN" : "REGISTER NOW";
       case EventRegMode.requestToJoin:
         if (_status == EventRegStatus.joined) return "YOU'RE IN";
-        if (_status == EventRegStatus.awaitingConfirmation) return "CANCEL REQUEST";
+        if (_status == EventRegStatus.awaitingConfirmation) return "AWAITING CONFIRM";
         return "REQUEST TO JOIN";
     }
   }
@@ -202,7 +202,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
   Color _primaryBgColor() {
     if (_mode == EventRegMode.requestToJoin &&
         _status == EventRegStatus.awaitingConfirmation) {
-      return _danger;
+      return Colors.grey.shade400;
     }
     return _accent;
   }
@@ -210,7 +210,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
   Color _primaryOverlayColor() {
     if (_mode == EventRegMode.requestToJoin &&
         _status == EventRegStatus.awaitingConfirmation) {
-      return _dangerDark.withOpacity(.12);
+      return Colors.grey.shade600.withOpacity(.12);
     }
     return _accentDark.withOpacity(.12);
   }
@@ -219,7 +219,29 @@ class _EventDetailPageState extends State<EventDetailPage> {
   bool _isPrimaryDisabled() {
     if (_submitting) return true;
     if (_status == EventRegStatus.joined) return true;
+    if (_status == EventRegStatus.awaitingConfirmation) return true;
     return false;
+  }
+
+  Future<bool> _confirmCancel() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Cancel request?'),
+            content: const Text('Do you want to cancel your join request for this event?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('No'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Cancel request'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   // ===== Action =====
@@ -243,8 +265,20 @@ class _EventDetailPageState extends State<EventDetailPage> {
       }
     } else {
       if (_status == EventRegStatus.awaitingConfirmation) {
-        // No cancel API yet
-        toast = "Cancel not available";
+        // CANCEL REQUEST
+        final ok = await _confirmCancel();
+        if (!ok) {
+          setState(() => _submitting = false);
+          return;
+        }
+        try {
+          await DatabaseService().cancelEventJoinRequestFiber(widget.event.id);
+          _status = EventRegStatus.notJoined;
+          _changed = true;
+          toast = "Request canceled";
+        } catch (e) {
+          toast = 'Action failed: $e';
+        }
       } else {
         // ✅ เปลี่ยนจาก bottom sheet -> นำทางไปหน้าใหม่
         final ok = await Navigator.of(context).push<bool>(
