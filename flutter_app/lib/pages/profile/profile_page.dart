@@ -1,6 +1,7 @@
 // lib/pages/profile_page.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -68,6 +69,8 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _usernameAlias;
   String? _phoneNumber;
   String? _avatarUrl;
+  final ImagePicker _avatarPicker = ImagePicker();
+  bool _uploadingAvatar = false;
 
   static const _kAliasKey = 'profile_username_alias';
   static const _kPhoneKey = 'profile_phone_number';
@@ -509,6 +512,14 @@ class _ProfilePageState extends State<ProfilePage> {
       if (targetId != null && targetId.trim().isNotEmpty) {
         final map = await _db.getUserByObjectIdFiber(targetId.trim());
         u = UserProfile.fromJson(map);
+        // Prefer avatar from DB profile if present
+        final av = (map['profile_pic'] ?? map['profilePic'] ?? map['profile_picture'] ??
+                map['avatar_url'] ?? map['avatar'] ?? map['photo_url'] ?? map['photoUrl'] ?? map['avatarUrl'])
+            ?.toString()
+            .trim();
+        if (av != null && av.isNotEmpty) {
+          _avatarUrl = av;
+        }
       } else if (_isMine) {
         final map = await _db.getMeFiber();
         // Save resolved object id (if any) for fetching posts
@@ -517,6 +528,13 @@ class _ProfilePageState extends State<ProfilePage> {
           _resolvedUid = resolved;
         }
         u = UserProfile.fromJson(map);
+        final av = (map['profile_pic'] ?? map['profilePic'] ?? map['profile_picture'] ??
+                map['avatar_url'] ?? map['avatar'] ?? map['photo_url'] ?? map['photoUrl'] ?? map['avatarUrl'])
+            ?.toString()
+            .trim();
+        if (av != null && av.isNotEmpty) {
+          _avatarUrl = av;
+        }
       } else {
         // Viewing others without resolvable ID — build a minimal profile placeholder
         final name = (widget.initialName ?? '').trim();
@@ -702,10 +720,11 @@ class _ProfilePageState extends State<ProfilePage> {
     }
     final name = display();
     if (name.isEmpty) return list;
+    final fallbackAvatar = (_avatarUrl ?? '').trim();
     return list.map((p) => models.Post(
       id: p.id,
       userId: p.userId,
-      profilePic: p.profilePic,
+      profilePic: p.profilePic.trim().isNotEmpty ? p.profilePic : fallbackAvatar,
       username: name,
       category: p.category,
       message: p.message,
@@ -1528,9 +1547,11 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   ImageProvider<Object>? _avatarProvider() {
-    if (_avatarUrl != null && _avatarUrl!.isNotEmpty) {
-      return NetworkImage(_avatarUrl!);
-    }
+    final s = (_avatarUrl ?? '').trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('assets/')) return AssetImage(s);
+    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
+    if (s.startsWith('http://') || s.startsWith('https://')) return NetworkImage(s);
     return null;
   }
 
@@ -1629,7 +1650,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // -------- เปลี่ยนรูปโปรไฟล์ --------
+  // -------- เปลี่ยนรูปโปรไฟล์ (merge วิธีอัปโหลดจากอุปกรณ์/URL) --------
   Future<void> _changePhoto() async {
     if (!mounted) return;
     final selected = await showModalBottomSheet<String>(
@@ -1647,6 +1668,21 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               const Text('Choose profile picture', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.photo_library),
+                  label: const Text('Upload from device'),
+                  onPressed: () async {
+                    final ImagePicker picker = ImagePicker();
+                    final XFile? file = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1600);
+                    if (file == null) return;
+                    if (!context.mounted) return;
+                    Navigator.of(context).pop('UPLOAD_LOCAL:'+file.path);
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -1702,12 +1738,68 @@ class _ProfilePageState extends State<ProfilePage> {
     );
 
     if (selected == null || selected.isEmpty) return;
-
+    if (selected.startsWith('UPLOAD_LOCAL:')) {
+      final path = selected.substring('UPLOAD_LOCAL:'.length);
+      await _uploadProfilePhotoFromDevice(path);
+      return;
+    }
+    if (selected.startsWith('http://') || selected.startsWith('https://')) {
+      await _uploadProfilePhotoFromUrl(selected);
+      return;
+    }
     await _saveProfileChanges(
       username: _usernameAlias ?? '',
       phone: _phoneNumber ?? '',
       avatarUrl: selected,
     );
+  }
+
+  Future<void> _uploadProfilePhotoFromDevice(String path) async {
+    try {
+      final fname = path.split('/').last;
+      final url = await _db.uploadProfileAvatarFiber(imagePath: path, imageFilename: fname);
+      if (url != null && url.isNotEmpty) {
+        await _saveProfileChanges(
+          username: _usernameAlias ?? '',
+          phone: _phoneNumber ?? '',
+          avatarUrl: url,
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload error: $e')));
+      }
+    }
+  }
+
+  Future<void> _uploadProfilePhotoFromUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      final resp = await http.get(uri).timeout(const Duration(seconds: 15));
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final fname = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'avatar.jpg';
+        final finalUrl = await _db.uploadProfileAvatarFiber(imageBytes: resp.bodyBytes, imageFilename: fname);
+        if (finalUrl != null && finalUrl.isNotEmpty) {
+          await _saveProfileChanges(
+            username: _usernameAlias ?? '',
+            phone: _phoneNumber ?? '',
+            avatarUrl: finalUrl,
+          );
+          return;
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload error: $e')));
+      }
+    }
   }
 
  Future<void> _saveProfileChanges({

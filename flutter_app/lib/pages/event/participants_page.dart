@@ -260,9 +260,6 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
   // ===== BUILD (คงดีไซน์เดิม) =====
   @override
   Widget build(BuildContext context) {
-    const headerG1 = Color(0xFF7E9766);
-    const headerG2 = Color(0xFF7E9766);
-
     final w = MediaQuery.sizeOf(context).width;
     final isWide = w >= 800;
 
@@ -271,80 +268,58 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
     final double? percent = cap > 0 ? (total / cap).clamp(0.0, 1.0) : null;
 
     return Scaffold(
-      backgroundColor: headerG1,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        title: Text(widget.eventTitle ?? 'Participants'),
+      ),
+      backgroundColor: const Color(0xFFF7F8F3),
       body: FutureBuilder<void>(
         future: _future,
         builder: (context, snap) {
-          // header spacer
-          final topSpacer = SliverToBoxAdapter(
-            child: Container(
-              height: MediaQuery.of(context).padding.top + 6,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [headerG1, headerG2],
-                ),
-              ),
-            ),
-          );
-
           if (snap.connectionState == ConnectionState.waiting) {
-            return CustomScrollView(slivers: [
-              topSpacer,
-              const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            ]);
+            return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
-            return CustomScrollView(slivers: [
-              topSpacer,
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('โหลดข้อมูลไม่สำเร็จ'),
-                      const SizedBox(height: 8),
-                      Text('${snap.error}', style: const TextStyle(color: Colors.black54)),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: () => setState(() => _future = _load()),
-                        child: const Text('ลองใหม่'),
-                      ),
-                    ],
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('โหลดข้อมูลไม่สำเร็จ'),
+                  const SizedBox(height: 8),
+                  Text('${snap.error}', style: const TextStyle(color: Colors.black54)),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => setState(() => _future = _load()),
+                    child: const Text('ลองใหม่'),
                   ),
-                ),
+                ],
               ),
-            ]);
+            );
           }
+          return RefreshIndicator(
+            onRefresh: () async => setState(() => _future = _load()),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Material(
+                color: const Color(0xFFEDEDED),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(32)),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 16),
 
-          return CustomScrollView(
-            slivers: [
-              topSpacer,
-
-              // ===== เนื้อหาหลัก =====
-              SliverToBoxAdapter(
-                child: Material(
-                  color: const Color(0xFFEDEDED),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(32)),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 16),
-
-                      // KPI donut + ชื่ออีเวนต์ + เวลาเช็คอิน
-                      if (percent != null ||
-                          widget.eventTitle != null ||
-                          widget.checkinTimeLabel != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                    // KPI donut + ชื่ออีเวนต์ + เวลาเช็คอิน
+                    if (percent != null ||
+                        widget.eventTitle != null ||
+                        widget.checkinTimeLabel != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (percent != null)
                                 _KpiProgressCard(
@@ -489,24 +464,17 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
                         ),
                       ),
 
-                      const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                      // รายการ / ตาราง
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        child:
-                            isWide ? _buildTableSection() : _buildListSection(),
-                      ),
-                    ],
-                  ),
+                    // รายการ / ตาราง
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: isWide ? _buildTableSection() : _buildListSection(),
+                    ),
+                  ],
                 ),
               ),
-
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: const ColoredBox(color: Color(0xFFEDEDED)),
-              ),
-            ],
+            ),
           );
         },
       ),

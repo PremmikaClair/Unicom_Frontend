@@ -15,6 +15,8 @@ class HeaderSection extends StatelessWidget {
 
   final String? greetingName;        // ชื่อผู้ใช้
   final String? subtitle;            // ข้อความใต้ชื่อ (optional)
+  // เมื่อ true: แสดงเฉพาะโลโก้ตรงกลาง (ไม่มีข้อความใด ๆ)
+  final bool centerLogoOnly;
 
   const HeaderSection({
     super.key,
@@ -24,6 +26,7 @@ class HeaderSection extends StatelessWidget {
     this.greenBackground = false,
     this.greetingName,
     this.subtitle,
+    this.centerLogoOnly = false,
   });
 
   String _firstName(String? s) {
@@ -37,6 +40,58 @@ class HeaderSection extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final titleText = 'Hello ${_firstName(greetingName)},';
     final subText = subtitle ?? "Let's Elevate Your Skin's Health";
+
+    // ---------- โหมดโลโก้ล้วน (ตรงกลาง) ----------
+    if (centerLogoOnly) {
+      final logo = SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                'assets/images/ourlogo.png',
+                height: 50,
+                fit: BoxFit.contain,
+                errorBuilder: (ctx, err, stack) => Image.asset(
+                  'assets/images/KU.png',
+                  height: 50,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (!showBackground) return logo;
+
+      final BoxDecoration bg = greenBackground
+          ? const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF)],
+              ),
+            )
+          : const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFF6D9F2), Color(0xFFE6E0FF)],
+              ),
+            );
+
+      return Container(
+        width: double.infinity,
+        decoration: bg,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [logo, if (greenBackground) const SizedBox(height: 6)],
+        ),
+      );
+    }
 
     // ---------- เนื้อหา ----------
     final content = SafeArea(

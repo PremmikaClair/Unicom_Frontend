@@ -1338,6 +1338,93 @@ class DatabaseService {
     return data.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  // ---------- Profile: Upload avatar (multipart) ----------
+  // Tries multiple common endpoints and keys. Returns the URL string if available.
+  Future<String?> uploadProfileAvatarFiber({
+    String? imagePath,
+    Uint8List? imageBytes,
+    String? imageFilename,
+  }) async {
+    if ((imagePath == null || imagePath.isEmpty) && (imageBytes == null || imageBytes.isEmpty)) {
+      throw ArgumentError('uploadProfileAvatarFiber: no image provided');
+    }
+
+    Future<String?> _tryUpload({required String method, required String path, required String fieldName}) async {
+      final uri = _buildUri(path, const {});
+      final req = http.MultipartRequest(method, uri);
+      req.headers.addAll(_headers(const {'Accept': 'application/json'}));
+      final fname = (imageFilename == null || imageFilename.isEmpty) ? 'avatar.jpg' : imageFilename;
+      if (imageBytes != null && imageBytes.isNotEmpty) {
+        req.files.add(http.MultipartFile.fromBytes(fieldName, imageBytes, filename: fname));
+      } else if (imagePath != null && imagePath.isNotEmpty) {
+        req.files.add(await http.MultipartFile.fromPath(fieldName, imagePath, filename: fname));
+      }
+
+      final streamed = await req.send().timeout(const Duration(seconds: 20));
+      final res = await http.Response.fromStream(streamed);
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return null; // try next combo
+      }
+
+      String? _extractUrl(String body) {
+        if (body.isEmpty) return null;
+        dynamic decoded;
+        try { decoded = jsonDecode(body); } catch (_) { return null; }
+        Map<String, dynamic>? asMap(dynamic v) => (v is Map<String, dynamic>) ? v : (v is Map ? Map<String, dynamic>.from(v) : null);
+        String? readUrl(Map<String, dynamic> m) {
+          final keys = ['url','avatar_url','avatarUrl','photoUrl','photo_url','profile_pic','profilePic'];
+          for (final k in keys) {
+            final v = m[k];
+            if (v is String && v.trim().isNotEmpty) return v.trim();
+          }
+          return null;
+        }
+        if (decoded is String && decoded.trim().isNotEmpty) return decoded.trim();
+        if (decoded is List && decoded.isNotEmpty) {
+          final m = asMap(decoded.first);
+          if (m != null) return readUrl(m);
+        }
+        if (decoded is Map) {
+          final m = Map<String, dynamic>.from(decoded);
+          final direct = readUrl(m);
+          if (direct != null) return direct;
+          for (final key in ['data','result','user','profile']) {
+            final mm = asMap(m[key]);
+            if (mm != null) {
+              final u = readUrl(mm);
+              if (u != null) return u;
+            }
+          }
+        }
+        return null;
+      }
+
+      final url = _extractUrl(res.body.trim());
+      if (url != null && url.isNotEmpty) return url;
+      // If server doesn't return URL, fetch my profile and read profile_pic
+      try {
+        final me = await getMeFiber();
+        final av = (me['profile_pic'] ?? me['profilePic'] ?? me['profile_picture'] ?? me['avatar_url'] ?? me['avatar'] ?? me['photo_url'] ?? me['photoUrl'] ?? me['avatarUrl'])?.toString().trim();
+        if (av != null && av.isNotEmpty) return av;
+      } catch (_) {}
+      return null;
+    }
+
+    final endpoints = <String>['/users/myprofile/avatar','/users/myprofile','/users/me/avatar','/users/me','/profile/avatar','/profile/me','/users/avatar','/avatar'];
+    final methods = <String>['POST','PUT'];
+    final fieldNames = <String>['file','avatar','photo','image','profile_pic'];
+
+    for (final ep in endpoints) {
+      for (final method in methods) {
+        for (final fname in fieldNames) {
+          final url = await _tryUpload(method: method, path: ep, fieldName: fname);
+          if (url != null && url.isNotEmpty) return url;
+        }
+      }
+    }
+    return null;
+  }
+
   // GET /event/manageable-orgs?search=
   Future<List<Map<String, dynamic>>> getManageableOrgsFiber({String? search}) async {
     final uri = _buildUri('/event/manageable-orgs', {

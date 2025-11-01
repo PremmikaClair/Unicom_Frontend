@@ -464,10 +464,15 @@ class PostCard extends StatelessWidget {
 
   ImageProvider? _safeAvatar(String? src) {
     if (src == null || src.trim().isEmpty) return null;
-    if (src.startsWith('assets/')) return AssetImage(src);
-    final uri = Uri.tryParse(src.trim());
-    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) return null;
-    return NetworkImage(uri.toString());
+    final s = src.trim();
+    if (s.startsWith('assets/')) return AssetImage(s);
+    // Support backend sending relative URLs like "/uploads/..."
+    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
+    final uri = Uri.tryParse(s);
+    if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) {
+      return NetworkImage(uri.toString());
+    }
+    return null;
   }
 
   @override

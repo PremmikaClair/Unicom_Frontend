@@ -2,13 +2,11 @@
 import 'package:flutter/material.dart';
 
 import '../components/app_colors.dart';
-// import '../components/header_section.dart'; // no longer used for Home header
 import '../components/post_card.dart';
 import '../models/post.dart';
 import 'profile/profile_page.dart';
 import 'post_detail.dart';
 import '../services/database_service.dart';
-import '../services/auth_service.dart';
 import '../models/event.dart';
 import 'event/event_details_page.dart';
 import 'explore/hashtag_feed_page.dart';
@@ -50,8 +48,6 @@ class _HomePageState extends State<HomePage> {
 
   // Greeting
   String? _firstName;
-  String? _username; // for header (to right of avatar)
-  String? _avatarUrl;
 
   // Scrollers
   final _scroll = ScrollController();
@@ -223,17 +219,8 @@ class _HomePageState extends State<HomePage> {
       final f = (me['firstname'] ?? me['firstName'] ?? '').toString().trim();
       final l = (me['lastname'] ?? me['lastName'] ?? '').toString().trim();
       final full = [f, l].where((s) => s.isNotEmpty).join(' ').trim();
-
-      final uname = (me['username'] ?? me['userName'] ?? me['name'] ?? '').toString().trim();
-      final avatar = (me['profile_pic'] ?? me['profilePic'] ?? me['avatar_url'] ?? me['avatar'] ?? me['profile_picture'] ?? '')
-          .toString()
-          .trim();
       if (!mounted) return;
-      setState(() {
-        if (full.isNotEmpty) _firstName = full; // kept for any future use
-        _username = uname.isNotEmpty ? uname : _firstName; // fallback to name
-        _avatarUrl = avatar;
-      });
+      if (full.isNotEmpty) setState(() => _firstName = full);
     } catch (_) {}
   }
 
@@ -245,6 +232,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   // Replace uid/username with full name fetched from profile API
+  // Also try to backfill avatar (profilePic) from profile data
   Future<void> _enrichUserNamesFor(List<Post> items) async {
     final hex24 = RegExp(r'^[a-fA-F0-9]{24}$');
     final ids = <String>{
@@ -254,6 +242,7 @@ class _HomePageState extends State<HomePage> {
     if (ids.isEmpty) return;
 
     final Map<String, String> nameById = {};
+    final Map<String, String> avatarById = {};
     for (final id in ids) {
       try {
         final prof = await _db.getUserByObjectIdFiber(id);
@@ -261,19 +250,60 @@ class _HomePageState extends State<HomePage> {
         final last = (prof['lastname'] ?? prof['lastName'] ?? '').toString();
         final full = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
         if (full.isNotEmpty) nameById[id] = full;
+        final avatar = (prof['profile_pic'] ??
+                prof['profilePic'] ??
+                prof['profile_picture'] ??
+                prof['avatar_url'] ??
+                prof['avatar'] ??
+                prof['photo_url'] ??
+                prof['photoUrl'] ??
+                prof['avatarUrl'] ??
+                '')
+            .toString()
+            .trim();
+        if (avatar.isNotEmpty) avatarById[id] = avatar;
       } catch (_) {}
     }
 
-    if (nameById.isEmpty || !mounted) return;
+    // Fallback: try search by username for posts without avatar
+    final needByName = <String>{
+      for (final p in items)
+        if ((p.profilePic.trim().isEmpty) && p.username.trim().isNotEmpty) p.username.trim(),
+    };
+    if (needByName.isNotEmpty) {
+      for (final name in needByName) {
+        try {
+          final res = await _db.searchUsers(q: name, limit: 1, cursor: null);
+          if (res.items.isNotEmpty) {
+            final u = res.items.first;
+            final avatar = (u['profile_pic'] ?? u['profilePic'] ?? u['profile_picture'] ??
+                    u['avatar_url'] ?? u['avatar'] ?? u['photo_url'] ?? u['photoUrl'] ?? u['avatarUrl'] ?? '')
+                .toString()
+                .trim();
+            if (avatar.isNotEmpty) {
+              // We don't know id mapping here; apply later by matching username
+              avatarById['__name__::$name'] = avatar;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    if ((nameById.isEmpty && avatarById.isEmpty) || !mounted) return;
     setState(() {
       _posts = _posts.map((p) {
         final nm = nameById[p.userId];
-        if (nm == null) return p;
+        String? av = avatarById[p.userId];
+        // fallback by username mapping
+        av ??= avatarById['__name__::${p.username}'];
+        if (nm == null && (av == null || av.isEmpty)) return p;
         return Post(
           id: p.id,
           userId: p.userId,
-          profilePic: p.profilePic,
-          username: nm,
+          profilePic: (p.profilePic.trim().isEmpty && av != null && av.isNotEmpty)
+              ? av
+              : p.profilePic,
+          username: nm ?? p.username,
           category: p.category,
           message: p.message,
           likeCount: p.likeCount,
@@ -292,78 +322,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ---------- UI ----------
-  ImageProvider? _avatarProviderFrom(String? src) {
-    final s = (src ?? '').trim();
-    if (s.isEmpty) return null;
-    if (s.startsWith('assets/')) return AssetImage(s);
-    if (s.startsWith('http://') || s.startsWith('https://')) return NetworkImage(s);
-    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
-    return null;
-  }
-
-  Widget _buildHomeHeader(BuildContext context) {
-    final prov = _avatarProviderFrom(_avatarUrl);
-    final uname = (_username ?? '').trim();
-    return SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-        child: SizedBox(
-          height: 56,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Centered logo (ourlogo.png), fallback to KU.png
-              Image.asset(
-                'assets/images/ourlogo.png',
-                height: 44,
-                fit: BoxFit.contain,
-                errorBuilder: (ctx, err, st) => Image.asset(
-                  'assets/images/KU.png',
-                  height: 44,
-                  fit: BoxFit.contain,
-                ),
-              ),
-
-              // Left: avatar + username
-              Align(
-                alignment: Alignment.centerLeft,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
-                  },
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundImage: prov,
-                        backgroundColor: AppColors.sage.withOpacity(.4),
-                        child: prov == null ? const Icon(Icons.person, color: Colors.white) : null,
-                      ),
-                      const SizedBox(width: 8),
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.45,
-                        ),
-                        child: Text(
-                          uname,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.black87),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
   void _showSnack(String msg) {
     final m = ScaffoldMessenger.maybeOf(context);
     m?.hideCurrentSnackBar();
@@ -621,17 +579,7 @@ class _HomePageState extends State<HomePage> {
     final header = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        HeaderSection(
-          showBackground: false,   // ✅ ไม่มีพื้นหลัง
-          greenBackground: false,  // ค่าไหนก็ได้ เพราะไม่ใช้พื้นหลัง
-          greetingName: _firstName,
-          onAvatarTap: () {
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
-          },
-          onSettingsTap: () {
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
-          },
-        ),
+        HeaderSection(centerLogoOnly: true),
         const SizedBox(height: 12),
         _incomingEventsSection(context),
         Material(

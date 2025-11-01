@@ -748,6 +748,21 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
   Widget _previewUserTile(BuildContext context, _MatchedUser match) {
     final theme = Theme.of(context);
     final bg = AppColors.sage.withOpacity(.12);
+
+    ImageProvider? _avatar() {
+      final raw = match.avatarUrl.trim();
+      if (raw.isEmpty) return null;
+      if (raw.startsWith('assets/')) return AssetImage(raw);
+      if (raw.startsWith('http://') || raw.startsWith('https://')) return NetworkImage(raw);
+      if (raw.startsWith('/')) {
+        // Use same absolute rule as people_search_page
+        final base = DatabaseService().baseUrl; // API base
+        final b = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+        return NetworkImage('$b$raw');
+      }
+      return null;
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Material(
@@ -763,20 +778,35 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
               border: Border.all(color: AppColors.sage.withOpacity(.35)),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  match.primaryLabel,
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                CircleAvatar(
+                  radius: 18,
+                  backgroundImage: _avatar(),
+                  backgroundColor: AppColors.sage.withOpacity(.25),
+                  child: _avatar() == null
+                      ? const Icon(Icons.person_outline, color: Colors.white)
+                      : null,
                 ),
-                if (match.secondaryLabel.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    match.secondaryLabel,
-                    style: theme.textTheme.bodySmall?.copyWith(color: Colors.black54),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        match.primaryLabel,
+                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      if (match.secondaryLabel.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          match.secondaryLabel,
+                          style: theme.textTheme.bodySmall?.copyWith(color: Colors.black54),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               ],
             ),
           ),
