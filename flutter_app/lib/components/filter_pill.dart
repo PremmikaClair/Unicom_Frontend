@@ -36,10 +36,6 @@ class FilterPill extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.circular(999),
             // Border: deep green in all states
-            border: Border.all(
-              color: AppColors.deepGreen,
-              width: 1.2,
-            ),
             boxShadow: selected
                 ? [
                     BoxShadow(

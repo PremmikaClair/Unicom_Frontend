@@ -319,6 +319,8 @@ class _ExplorePageState extends State<ExplorePage> {
 
   Widget _trendTile(tr.TrendItem t) {
     return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      minVerticalPadding: 0,
       onTap: () {
         final tag = (t.tag ?? t.title).replaceFirst('#', '');
         Navigator.of(context).pushNamed(
@@ -329,16 +331,6 @@ class _ExplorePageState extends State<ExplorePage> {
       title: Text(
         t.title,
         style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-      ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text(
-          [
-            t.context ?? 'Trending in $_location',
-            if (t.postCount != null) '${_fmtPosts(t.postCount!)} posts',
-          ].join(' · '),
-          style: const TextStyle(fontSize: 13, color: Colors.grey),
-        ),
       ),
     );
   }

@@ -444,7 +444,7 @@ class _HomePageState extends State<HomePage> {
     return Container(
       width: 280,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color.fromARGB(255, 255, 255, 255),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black12),
       ),
@@ -748,24 +748,12 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
+    const homeBg = Color(0xFFEDEDED);
     return Scaffold(
-      // ✨ CHANGED: ให้สีพื้นหลังโปร่งใส แล้วใช้ Container ข้างในใส่ gradient
-      backgroundColor: Colors.transparent,
-      body: Container(
-        // ✨ CHANGED: พื้นหลังกราเดียนต์ทั้งหน้า
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            stops: [0.0, 0.55, 1.0],
-            colors: [
-              Color(0xFFEAF5EF), // ขาวอมเขียว (คงไว้ได้)
-              Color.fromARGB(255, 170, 220, 189), // เขียวมิ้นต์อ่อน
-              Color.fromARGB(255, 96, 145, 123), // เขียวมิ้นต์กลาง // เขียวมิ้นต์สดขึ้น // ม่วงอ่อนมาก
-            ],
-          ),
-        ),
-        child: SafeArea( // ✨ CHANGED: ให้คอนเทนต์ไม่ชน status bar
+      backgroundColor: homeBg,
+      body: ColoredBox(
+        color: homeBg,
+        child: SafeArea(
           bottom: false,
           child: Column(
             children: [
