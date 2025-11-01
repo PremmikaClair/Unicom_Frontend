@@ -1355,9 +1355,9 @@ class DatabaseService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
-  // PATCH /qa/:qaId/answer { answerText }
+  // PATCH /event/qa/:qaId/answer { answerText }
   Future<Map<String, dynamic>> answerEventQaFiber(String qaId, String answerText) async {
-    final uri = _buildUri('/qa/${Uri.encodeComponent(qaId)}/answer', {});
+    final uri = _buildUri('/event/qa/${Uri.encodeComponent(qaId)}/answer', {});
     final res = await _client
         .patch(
           uri,

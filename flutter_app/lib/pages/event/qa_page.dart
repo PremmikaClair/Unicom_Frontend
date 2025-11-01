@@ -1,5 +1,6 @@
 ﻿import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:characters/characters.dart';
 import 'package:flutter_app/components/app_colors.dart';
 import '../../services/database_service.dart';
 import '../../services/auth_service.dart';
@@ -140,8 +141,12 @@ class EventQaApiDataSource implements QaDataSource {
 
   bool _isAnswered(Map m) {
     final s = (m['status'] ?? '').toString().toLowerCase();
-    final hasText = (m['answer_text'] ?? '').toString().isNotEmpty;
-    return s == 'answered' || hasText;
+    final hasTextSnake = (m['answer_text'] ?? '').toString().isNotEmpty;
+    final hasTextCamel = (m['answerText'] ?? '').toString().isNotEmpty;
+    final answeredFlag = (m['answered'] == true) ||
+        (m['isAnswered'] == true) ||
+        ((m['status'] ?? '').toString().toLowerCase() == 'answered');
+    return answeredFlag || hasTextSnake || hasTextCamel || s == 'answered';
   }
 
   DateTime _parseTime(dynamic v, {DateTime? fallback}) {
@@ -151,9 +156,9 @@ class EventQaApiDataSource implements QaDataSource {
   }
 
   QaQuestion _fromDb(Map<String, dynamic> m) {
-    final id = (m['_id'] ?? '').toString();
-    final qText = (m['question_text'] ?? '').toString();
-    final qTime = _parseTime(m['question_created_at']);
+    final id = (m['_id'] ?? m['id'] ?? '').toString();
+    final qText = ((m['question_text'] ?? m['questionText'] ?? m['question']) ?? '').toString();
+    final qTime = _parseTime(m['question_created_at'] ?? m['questionCreatedAt'] ?? m['createdAt']);
     final answered = _isAnswered(m);
 
     // ถ้ามีคำตอบ ให้สร้างเป็น 1 answer จากช่อง answer_text / answer_created_at
@@ -162,8 +167,8 @@ class EventQaApiDataSource implements QaDataSource {
             QaAnswer(
               id: 'a_$id',
               author: organizerName, // ถ้าต้องการชื่อจริงของผู้ตอบ ดึงเพิ่มจาก answerer_id ได้
-              text: (m['answer_text'] ?? '').toString(),
-              time: _parseTime(m['answer_created_at'], fallback: qTime),
+              text: ((m['answer_text'] ?? m['answerText']) ?? '').toString(),
+              time: _parseTime(m['answer_created_at'] ?? m['answerCreatedAt'], fallback: qTime),
             ),
           ]
         : const <QaAnswer>[];
@@ -205,9 +210,9 @@ class EventQaApiDataSource implements QaDataSource {
     final res = await DatabaseService().answerEventQaFiber(qid, text);
     final m = Map<String, dynamic>.from(res);
 
-    final id = (m['_id'] ?? qid).toString();
-    final aText = (m['answer_text'] ?? text).toString();
-    final aTime = _parseTime(m['answer_created_at']);
+    final id = (m['_id'] ?? m['id'] ?? qid).toString();
+    final aText = ((m['answer_text'] ?? m['answerText']) ?? text).toString();
+    final aTime = _parseTime(m['answer_created_at'] ?? m['answerCreatedAt']);
     return QaAnswer(id: 'a_$id', author: organizerName, text: aText, time: aTime);
   }
 }
@@ -323,10 +328,10 @@ class _QaPageState extends State<QaPage> {
       appBar: AppBar(
         elevation: 0.6,
         backgroundColor: Colors.white,
-        titleSpacing: 0.0,
-        title: Text(
-          widget.title,
-          style: const TextStyle(
+        centerTitle: true,
+        title: const Text(
+          'Q&A',
+          style: TextStyle(
             color: _textPrimary,
             fontWeight: FontWeight.w800,
             fontSize: 18.0,
@@ -726,6 +731,14 @@ class _QaCardState extends State<_QaCard> {
       separatorBuilder: (_, __) => const SizedBox(height: 8.0),
       itemBuilder: (_, i) {
         final a = answers[i];
+        final short = _shortOrganizer(widget.organizerName);
+        final authorLabel = (() {
+          final auth = a.author.trim();
+          final org = widget.organizerName.trim();
+          if (auth.isEmpty) return short;
+          if (auth.toLowerCase() == org.toLowerCase()) return short;
+          return a.author;
+        })();
         return Container(
           padding: const EdgeInsets.all(12.0),
           decoration: BoxDecoration(
@@ -736,7 +749,8 @@ class _QaCardState extends State<_QaCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(a.author, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.0, color: _textSecondary)),
+              Text(authorLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.0, color: _textSecondary)),
               const SizedBox(height: 4.0),
               Text(a.text, style: const TextStyle(color: _textPrimary, height: 1.4)),
               const SizedBox(height: 6.0),
@@ -746,6 +760,29 @@ class _QaCardState extends State<_QaCard> {
         );
       },
     );
+  }
+
+  String _shortOrganizer(String name) {
+    final t = name.trim();
+    if (t.isEmpty) return 'Organizer';
+    // Prefer text inside parentheses as short label, if concise
+    final paren = RegExp(r"\(([^)]+)\)");
+    final m = paren.firstMatch(t);
+    if (m != null) {
+      final inside = m.group(1)!.trim();
+      if (inside.length <= 10) return inside.toUpperCase();
+    }
+    // Build initials from words (skip very short connectors)
+    final words = t.split(RegExp(r"\s+")).where((w) => w.trim().isNotEmpty).toList();
+    final connectors = {'of', 'and', 'the', 'for', 'in', 'at'};
+    final initials = words
+        .where((w) => !connectors.contains(w.toLowerCase()))
+        .map((w) => w.characters.first.toUpperCase())
+        .join();
+    if (initials.length >= 2 && initials.length <= 6) return initials;
+    // Fallback to first word (uppercased, truncated if long)
+    final first = words.first.toUpperCase();
+    return first.length > 12 ? '${first.substring(0, 12)}…' : first;
   }
 
   Widget _answerComposer() {
