@@ -4,6 +4,7 @@ class UserProfile {
   final String? firstName;
   final String? lastName;
   final String? email;
+  final String? profilePic;
   final String? studentId;
   final String? advisorId;
   final String? gender;
@@ -17,6 +18,7 @@ class UserProfile {
     this.firstName,
     this.lastName,
     this.email,
+    this.profilePic,
     this.studentId,
     this.advisorId,
     this.gender,
@@ -39,6 +41,7 @@ class UserProfile {
       firstName: (j['firstName'] ?? j['firstname'])?.toString(),
       lastName: (j['lastName'] ?? j['lastname'])?.toString(),
       email: j['email']?.toString(),
+      profilePic: (j['profile_pic'] ?? j['profile pic'])?.toString(),
       studentId: j['student_id']?.toString(),
       advisorId: j['advisor_id']?.toString(),
       gender: j['gender']?.toString(),

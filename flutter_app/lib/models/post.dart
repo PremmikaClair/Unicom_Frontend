@@ -115,7 +115,7 @@ class Post {
     final userObj = _asMap(j['user']) ?? _asMap(j['author']) ?? _asMap(j['posted_by']) ?? _asMap(j['owner']);
     final authorRolesRaw = j['author_roles'] ?? j['Roles'];
     final visibilityRaw  = j['visibility_roles'];
-    final profile        = j['profile_pic'] ?? j['profile pic'];
+    final profile        = j['profile_pic'] ?? j['profile pic'] ?? (userObj?['profile_pic']) ?? (userObj?['profile pic']);
     final dateRaw        = j['createdAt'] ?? j['created_at'] ?? j['createdAT'] ??
                            j['timestamp'] ?? j['time_stamp'] ??
                            j['Date'] ?? j['date'];

@@ -710,6 +710,61 @@ class DatabaseService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
+  // Update my profile (multipart). Supports optional profile picture upload and fields.
+  // POST /users/profile_update with form-data: file (optional) and fields
+  Future<Map<String, dynamic>> updateMyProfileFiber({
+    // Optional image to upload
+    String? imagePath,
+    Uint8List? imageBytes,
+    String? imageFilename,
+    // Optional profile fields
+    String? firstName,
+    String? lastName,
+    String? thaiPrefix,
+    String? gender,
+    String? typePerson,
+    String? studentId,
+    String? advisorId,
+    String? password,
+  }) async {
+    final uri = _buildUri('/users/profile_update', {});
+    final req = http.MultipartRequest('POST', uri);
+    // Let MultipartRequest set boundary; just add auth headers
+    req.headers.addAll(_headers(const {'Accept': 'application/json'}));
+
+    // Add fields if provided
+    void put(String k, String? v) {
+      if (v != null && v.trim().isNotEmpty) req.fields[k] = v.trim();
+    }
+    put('FirstName', firstName);
+    put('LastName', lastName);
+    put('ThaiPrefix', thaiPrefix);
+    put('Gender', gender);
+    put('TypePerson', typePerson);
+    put('StudentID', studentId);
+    put('AdvisorID', advisorId);
+    put('Password', password);
+
+    // Attach image if provided
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      final fname = (imageFilename == null || imageFilename.isEmpty) ? 'profile.jpg' : imageFilename;
+      req.files.add(http.MultipartFile.fromBytes('file', imageBytes, filename: fname));
+    } else if (imagePath != null && imagePath.isNotEmpty) {
+      req.files.add(await http.MultipartFile.fromPath('file', imagePath));
+    }
+
+    final streamed = await req.send().timeout(const Duration(seconds: 20));
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw HttpException('POST $uri -> ${res.statusCode}: ${res.body}');
+    }
+    final body = res.body.trim();
+    if (body.isEmpty) return <String, dynamic>{};
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    return <String, dynamic>{};
+  }
+
   // ---------- Memberships ----------
   // No direct endpoint to list memberships by user. Derive from my profile.
   Future<List<Map<String, dynamic>>> getMyMembershipsFiber({String active = 'true'}) async {
