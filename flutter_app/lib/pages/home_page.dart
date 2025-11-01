@@ -759,9 +759,9 @@ class _HomePageState extends State<HomePage> {
             end: Alignment.bottomRight,
             stops: [0.0, 0.55, 1.0],
             colors: [
-              Color(0xFFF6FFF4), // ขาวอมเขียว (คงไว้ได้)
-              Color(0xFFE6F8EE), // เขียวมิ้นต์อ่อน
-              Color(0xFFCDEFD9), // เขียวมิ้นต์กลาง // เขียวมิ้นต์สดขึ้น // ม่วงอ่อนมาก
+              Color(0xFFEAF5EF), // ขาวอมเขียว (คงไว้ได้)
+              Color.fromARGB(255, 170, 220, 189), // เขียวมิ้นต์อ่อน
+              Color.fromARGB(255, 96, 145, 123), // เขียวมิ้นต์กลาง // เขียวมิ้นต์สดขึ้น // ม่วงอ่อนมาก
             ],
           ),
         ),
@@ -783,3 +783,4 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+

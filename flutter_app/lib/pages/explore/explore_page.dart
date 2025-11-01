@@ -115,7 +115,7 @@ class _ExplorePageState extends State<ExplorePage> {
     return Scaffold(
       backgroundColor: headerG,
       body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
           // Green header
           SliverToBoxAdapter(
             child: Container(
@@ -148,7 +148,7 @@ class _ExplorePageState extends State<ExplorePage> {
                                 overflow: TextOverflow.clip,
                                 style: textTheme.displaySmall?.copyWith(
                                   fontSize: 52,
-                                  color: const Color(0xFFF1F4EA),
+                                  color: Color(0xFFF1F4EA),
                                   fontWeight: FontWeight.w900,
                                   height: 0.90,
                                   letterSpacing: 1.5,
