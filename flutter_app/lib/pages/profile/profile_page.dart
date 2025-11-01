@@ -1261,38 +1261,21 @@ class _ProfilePageState extends State<ProfilePage> {
                 final pid = _pid(p);
                 return Padding(
                   padding: EdgeInsets.fromLTRB(8, i == 0 ? 4 : 0, 8, 8),
-                  child: (_isMine
-                      ? profile_card.PostCard(
-                          post: p,
-                          isLiked: _liked.contains(pid),
-                          likeCount: _likeCounts[pid] ?? 0,
-                          commentCount: _commentCounts[pid] ?? 0,
-                          onToggleLike: pid.isEmpty ? null : () => _toggleLikePost(pid),
-                          onCommentTap: () => _openPostDetail(p),
-                          onCardTap: () => _openPostDetail(p),
-                          onAvatarTap: null,
-                          onHashtagTap: (tag) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Hashtag: #$tag')),
-                            );
-                          },
-                          onDeleted: _refreshPostsAfterDelete,
-                        )
-                      : base_card.PostCard(
-                          post: p,
-                          isLiked: _liked.contains(pid),
-                          likeCount: _likeCounts[pid] ?? 0,
-                          commentCount: _commentCounts[pid] ?? 0,
-                          onToggleLike: pid.isEmpty ? null : () => _toggleLikePost(pid),
-                          onCommentTap: () => _openPostDetail(p),
-                          onCardTap: () => _openPostDetail(p),
-                          onAvatarTap: null,
-                          onHashtagTap: (tag) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Hashtag: #$tag')),
-                            );
-                          },
-                        )),
+                  child: PostCard(
+                    post: p,
+                    isLiked: _liked.contains(pid),
+                    likeCount: _likeCounts[pid] ?? 0,
+                    commentCount: _commentCounts[pid] ?? 0,
+                    onToggleLike: pid.isEmpty ? null : () => _toggleLikePost(pid),
+                    onCommentTap: () => _openPostDetail(p),
+                    onCardTap: () => _openPostDetail(p),
+                    onAvatarTap: null,
+                    onHashtagTap: (tag) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Hashtag: #$tag')),
+                      );
+                    },
+                  ),
                 );
               },
             ),
