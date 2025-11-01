@@ -397,7 +397,36 @@ class _CreateEventPageState extends State<CreateEventPage> {
               eventId = _pickId(inner);
             }
             if (eventId.isEmpty) {
+              // Top-level id fallback
               eventId = _pickId(res);
+            }
+            if (eventId.isEmpty) {
+              // Handle wrapper result shapes: { result: { event: {...}, schedules: [...] } }
+              final result = res['result'];
+              if (result is Map) {
+                final ev2 = result['event'];
+                if (ev2 is Map && eventId.isEmpty) {
+                  eventId = _pickId(Map<String, dynamic>.from(ev2));
+                }
+                if (eventId.isEmpty) {
+                  eventId = _pickId(Map<String, dynamic>.from(result));
+                }
+                if (eventId.isEmpty) {
+                  final sch = result['schedules'];
+                  if (sch is List && sch.isNotEmpty) {
+                    final s0 = sch.first;
+                    if (s0 is Map) {
+                      for (final k in const ['event_id', 'eventId', 'EventID', 'EventId']) {
+                        final v = s0[k];
+                        if (v != null) {
+                          final s = v.toString();
+                          if (s.isNotEmpty) { eventId = s; break; }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           } else {
             eventId = '';
