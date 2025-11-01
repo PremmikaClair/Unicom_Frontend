@@ -1,4 +1,4 @@
-name: flutter_app
+﻿name: flutter_app
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -77,7 +77,7 @@ flutter_launcher_icons:
   ios: true
   image_path: assets/images/ourlogo.png
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: assets/images/ourlogo.png
+  adaptive_icon_foreground: assets/images/ourlogo_foreground.png
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
@@ -108,3 +108,4 @@ flutter_launcher_icons:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
