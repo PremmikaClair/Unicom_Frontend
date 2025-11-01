@@ -78,7 +78,6 @@ class _ManageParticipantsPageState extends State<ManageParticipantsPage> {
                 ),
               );
             },
-            ),
           );
         },
       ),

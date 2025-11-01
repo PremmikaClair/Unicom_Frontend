@@ -8,6 +8,7 @@ import 'profile/profile_page.dart';
 import 'explore/hashtag_feed_page.dart';
 
 import '../controllers/like_controller.dart'; // ใช้ทั้ง FeedLikeController และ CommentLikeController
+import 'package:flutter_app/services/auth_service.dart';
 
 class PostPage extends StatefulWidget {
   final models.Post post;
@@ -38,6 +39,7 @@ class _PostPageState extends State<PostPage> {
   final _listController = ScrollController();
   final Map<String, String> _userNameCache = {}; // cache userId -> display name
   final Set<String> _fetchingUserIds = {};       // avoid duplicate in-flight fetches
+  final Map<String, String> _avatarCache = {};   // cache userId -> avatar url
 
   // ---- counters ----
   late int _commentCount = widget.post.comment;
@@ -194,22 +196,34 @@ class _PostPageState extends State<PostPage> {
             final first = (prof['firstname'] ?? prof['firstName'] ?? '').toString();
             final last  = (prof['lastname']  ?? prof['lastName']  ?? '').toString();
             final full = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
-            if (full.isNotEmpty) return MapEntry(id, full);
-          } catch (_) {}
-          return null;
+            final avatar = (prof['profile_pic'] ?? prof['profilePic'] ?? prof['profile_picture'] ??
+                    prof['avatar_url'] ?? prof['avatar'] ?? prof['photo_url'] ?? prof['photoUrl'] ?? prof['avatarUrl'] ?? '')
+                .toString()
+                .trim();
+            return {'id': id, 'name': full, 'avatar': avatar};
+          } catch (_) {
+            return null;
+          }
         }).toList();
         final results = await Future.wait(futures);
-        final updates = <String, String>{
-          for (final e in results)
-            if (e != null) e.key: e.value,
-        };
 
-        if (updates.isNotEmpty && mounted) {
+        if (mounted) {
           setState(() {
-            _userNameCache.addAll(updates);
+            for (final r in results) {
+              if (r == null) continue;
+              final id = r['id'] as String;
+              final name = (r['name'] as String?)?.trim();
+              final av = (r['avatar'] as String?)?.trim();
+              if (name != null && name.isNotEmpty) _userNameCache[id] = name;
+              if (av != null && av.isNotEmpty) _avatarCache[id] = av;
+            }
+
             for (final c in _comments) {
-              final nm = _userNameCache[c.user];
-              if (nm != null) c.user = nm;
+              final id = c.user; // currently still userId for pending items
+              final av = _avatarCache[id];
+              if (av != null && av.isNotEmpty) c.avatar = av;
+              final nm = _userNameCache[id];
+              if (nm != null && nm.isNotEmpty) c.user = nm;
             }
           });
         }
@@ -610,9 +624,17 @@ class _CommentTile extends StatelessWidget {
   ImageProvider? _safeAvatar(String? src) {
     if (src == null || src.trim().isEmpty) return null;
     if (src.startsWith('assets/')) return AssetImage(src);
-    final uri = Uri.tryParse(src.trim());
-    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) return null;
-    return NetworkImage(uri.toString());
+    final s = src.trim();
+    final uri = Uri.tryParse(s);
+    if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) {
+      return NetworkImage(uri.toString());
+    }
+    if (s.startsWith('/')) {
+      final base = AuthService.I.apiBase;
+      final b = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+      return NetworkImage('$b$s');
+    }
+    return null;
   }
 
   String _formatDateTime(DateTime dt) {
@@ -630,7 +652,7 @@ class _CommentTile extends StatelessWidget {
 class _CommentItem {
   final String? id;     // id จริงของคอมเมนต์
   String user;          // อาจ enrich จาก userId -> name
-  final String? avatar;
+  String? avatar;       // อนุญาตให้อัปเดตทีหลังเมื่อ enrich
   final String text;
   final DateTime createdAt;
 

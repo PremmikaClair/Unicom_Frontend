@@ -14,6 +14,7 @@ import '../../services/database_service.dart';
 
 import '../../models/user.dart';
 import '../../models/post.dart' as models;
+import '../../controllers/like_controller.dart';
 import '../../components/post_card_profile.dart';
 // Bring in avatar cache symbol without importing another PostCard
 import '../../components/post_card.dart' show PostCardAvatarCache;
@@ -92,6 +93,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final Set<String> _liked = {};
   final Map<String, int> _likeCounts = {};
   final Map<String, int> _commentCounts = {};
+  FeedLikeController? _likes;
   String? _resolvedUid; // resolved user id when viewing others
   String? _postsNextCursor; // next cursor from getFeed for paging
   String? _feedCursor;      // internal cursor when scanning feed for user's posts
@@ -481,6 +483,15 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
+    _likes = FeedLikeController(
+      db: _db,
+      setState: setState,
+      showSnack: (msg) {
+        final m = ScaffoldMessenger.maybeOf(context);
+        m?.hideCurrentSnackBar();
+        m?.showSnackBar(SnackBar(content: Text(msg)));
+      },
+    );
     _load();
   }
 
@@ -639,6 +650,7 @@ class _ProfilePageState extends State<ProfilePage> {
         _posts.addAll(withName);
         _loadingPosts = false;
       });
+      _likes?.seedFromPosts(withName);
       _primeCountsFromPosts(withName);
     } catch (e) {
       safeSetState(() {
@@ -687,6 +699,7 @@ class _ProfilePageState extends State<ProfilePage> {
           _postsNextCursor = page.nextCursor;
           _postsFetchingMore = false;
         });
+        _likes?.seedFromPosts(withName);
         _primeCountsFromPosts(withName);
         return;
       }
@@ -700,6 +713,7 @@ class _ProfilePageState extends State<ProfilePage> {
           _feedCursor = pair.cursor;
           _postsFetchingMore = false;
         });
+        _likes?.seedFromPosts(withName);
         _primeCountsFromPosts(withName);
         return;
       }
@@ -1158,9 +1172,55 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _openPostDetail(models.Post p) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PostPage(post: p)),
+    // Sync current like/comment counts into the detail page, like Home/Search pages
+    final synced = models.Post(
+      id: p.id,
+      userId: p.userId,
+      profilePic: p.profilePic,
+      username: p.username,
+      category: p.category,
+      message: p.message,
+      likeCount: _likes?.likeCountOf(p) ?? p.likeCount,
+      comment: _likes?.commentCountOf(p) ?? p.comment,
+      isLiked: _likes?.isLiked(p) ?? p.isLiked,
+      authorRoles: p.authorRoles,
+      visibilityRoles: p.visibilityRoles,
+      timeStamp: p.timeStamp,
+      picture: p.picture,
+      video: p.video,
+      images: p.images,
+      videos: p.videos,
     );
+
+    final result = await Navigator.of(context).push<Map<String, dynamic>?>(
+      MaterialPageRoute(builder: (_) => PostPage(post: synced)),
+    );
+
+    if (!mounted || result == null) return;
+    if ((result['postId'] as String?) != p.id) return;
+
+    if (_likes != null) {
+      _likes!.applyFromDetail(
+        postId: p.id,
+        liked: result['liked'] as bool?,
+        likeCount: result['likeCount'] as int?,
+        commentCount: result['commentCount'] as int?,
+      );
+    } else {
+      final liked = result['liked'] as bool?;
+      final likeCount = result['likeCount'] as int?;
+      final commentCount = result['commentCount'] as int?;
+      final id = _pid(p);
+      if (id.isNotEmpty) {
+        safeSetState(() {
+          if (liked != null) {
+            if (liked) _liked.add(id); else _liked.remove(id);
+          }
+          if (likeCount != null) _likeCounts[id] = likeCount;
+          if (commentCount != null) _commentCounts[id] = commentCount;
+        });
+      }
+    }
   }
 
   Future<void> _openAllergies() async {
@@ -1272,14 +1332,16 @@ class _ProfilePageState extends State<ProfilePage> {
               itemBuilder: (context, i) {
                 final p = _posts[i];
                 final pid = _pid(p);
+                // Lazy ensure like state similar to HomePage
+                WidgetsBinding.instance.addPostFrameCallback((_) => _likes?.ensureLikeState(p));
                 return Padding(
                   padding: EdgeInsets.fromLTRB(8, i == 0 ? 4 : 0, 8, 8),
                   child: PostCard(
                     post: p,
-                    isLiked: _liked.contains(pid),
-                    likeCount: _likeCounts[pid] ?? 0,
-                    commentCount: _commentCounts[pid] ?? 0,
-                    onToggleLike: pid.isEmpty ? null : () => _toggleLikePost(pid),
+                    isLiked: _likes?.isLiked(p) ?? _liked.contains(pid),
+                    likeCount: _likes?.likeCountOf(p) ?? (_likeCounts[pid] ?? p.likeCount),
+                    commentCount: _likes?.commentCountOf(p) ?? (_commentCounts[pid] ?? p.comment),
+                    onToggleLike: () => _likes != null ? _likes!.toggleLike(p) : _toggleLikePost(pid),
                     onCommentTap: () => _openPostDetail(p),
                     onCardTap: () => _openPostDetail(p),
                     onAvatarTap: null,

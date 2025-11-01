@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
+import '../../components/app_colors.dart';
 
 class ProfileApi {
   static String _myUsername = 'user123';
@@ -120,6 +121,7 @@ class _MakePostPageState extends State<MakePostPage> {
   final ImagePicker _imagePicker = ImagePicker();
   XFile? _pickedImage;
   Uint8List? _pickedImageBytes;
+  String? _avatarUrl; // current user's avatar url from API
 
   @override
   void initState() {
@@ -135,6 +137,31 @@ class _MakePostPageState extends State<MakePostPage> {
     _loadPostedAs();
     _loadOrgNodes();
     _loadCategories();
+    _loadMyAvatar();
+  }
+
+  Future<void> _loadMyAvatar() async {
+    try {
+      await AuthService.I.init();
+      final me = await DatabaseService().getMeFiber();
+      final url = (me['profile_pic'] ?? me['profilePic'] ?? me['avatar_url'] ?? me['avatar'] ?? me['photo'])?.toString();
+      if (!mounted) return;
+      setState(() => _avatarUrl = (url ?? '').trim());
+    } catch (_) {
+      // ignore; will show placeholder avatar
+    }
+  }
+
+  ImageProvider<Object>? _avatarProvider() {
+    final s = (_avatarUrl ?? '').trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('http://') || s.startsWith('https://')) return NetworkImage(s);
+    if (s.startsWith('/')) {
+      final base = AuthService.I.apiBase;
+      final b = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+      return NetworkImage('$b$s');
+    }
+    return null;
   }
 
   Future<void> _onPickImage() async {
@@ -859,7 +886,7 @@ class _MakePostPageState extends State<MakePostPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -885,8 +912,8 @@ class _MakePostPageState extends State<MakePostPage> {
                     label: 'Public',
                     icon: Icons.public,
                     selected: _visibilityAccess == 'public',
-                    selectedBg: const Color(0xFF0E4E3A),
-                    unselectedBg: const Color(0x1A204D3F),
+                    selectedBg: AppColors.sage,
+                    unselectedBg: Colors.white,
                     light: false,
                     onTap: () => setState(() {
                       _isPublic = true;
@@ -899,7 +926,7 @@ class _MakePostPageState extends State<MakePostPage> {
                     icon: Icons.lock_outline,
                     selected: _visibilityAccess == 'private',
                     selectedBg: const Color(0xFFDB2777),
-                    unselectedBg: const Color(0xFFF2ECFF),
+                    unselectedBg: Colors.white,
                     light: true,
                     onTap: () => setState(() {
                       _isPublic = false;
@@ -933,9 +960,12 @@ class _MakePostPageState extends State<MakePostPage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF7F8FA),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  color: Colors.white,
+                  border: Border.all(color: Colors.black12),
                   borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 4)),
+                  ],
                 ),
                 child: Row(
                   children: [
@@ -964,18 +994,24 @@ class _MakePostPageState extends State<MakePostPage> {
               // Composer card with avatar + textfield
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE9ECEB),
-                  borderRadius: BorderRadius.circular(28),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.black12),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 4)),
+                  ],
                 ),
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const CircleAvatar(
+                    CircleAvatar(
                       radius: 18,
-                      backgroundImage: NetworkImage(
-                        'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
-                      ),
+                      backgroundImage: _avatarProvider(),
+                      backgroundColor: const Color(0xFFE0E0E0),
+                      child: _avatarProvider() == null
+                          ? const Icon(Icons.person, color: Colors.white)
+                          : null,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -1047,9 +1083,12 @@ class _MakePostPageState extends State<MakePostPage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF7F8FA),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  color: Colors.white,
+                  border: Border.all(color: Colors.black12),
                   borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 4)),
+                  ],
                 ),
                 child: Row(
                   children: [
@@ -1374,6 +1413,10 @@ class _MakePostPageState extends State<MakePostPage> {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: selected ? selectedBg : Colors.black26),
+          boxShadow: selected
+              ? const [BoxShadow(color: Color(0x14000000), blurRadius: 8, offset: Offset(0, 2))]
+              : const [],
         ),
         child: Row(
           children: [
@@ -1464,9 +1507,9 @@ class _SectionHeader extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        fontSize: 22,
-        fontWeight: FontWeight.w800,
-        color: Color(0xFF492A07),
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: AppColors.deepGreen,
         letterSpacing: 0.2,
       ),
     );

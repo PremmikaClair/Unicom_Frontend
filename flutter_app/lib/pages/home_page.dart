@@ -1,7 +1,6 @@
 // lib/pages/home_page.dart
 import 'package:flutter/material.dart';
 
-import '../components/app_colors.dart';
 import '../components/post_card.dart';
 import '../models/post.dart';
 import 'profile/profile_page.dart';
@@ -13,7 +12,7 @@ import 'explore/hashtag_feed_page.dart';
 
 import '../components/filter_pill.dart';
 import '../components/filter_sheet.dart';
-import '../components/header_section.dart';
+// Removed header_section import to avoid conflicts; use local header instead
 import '../controllers/like_controller.dart';
 
 class HomePage extends StatefulWidget {
@@ -576,10 +575,34 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    Widget _logoHeader() {
+      return SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                'assets/images/ourlogo.png',
+                height: 50,
+                fit: BoxFit.contain,
+                errorBuilder: (ctx, err, stack) => Image.asset(
+                  'assets/images/KU.png',
+                  height: 50,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final header = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        HeaderSection(centerLogoOnly: true),
+        _logoHeader(),
         const SizedBox(height: 12),
         _incomingEventsSection(context),
         Material(
@@ -606,6 +629,7 @@ class _HomePageState extends State<HomePage> {
                     final result = await showModalBottomSheet<FilterSheetResult>(
                       context: context,
                       isScrollControlled: true,
+                      useRootNavigator: true,
                       backgroundColor: Colors.transparent,
                       builder: (_) => FilterBottomSheet(
                         loadFilters: () => loadFiltersWithDb(_db),
@@ -719,4 +743,3 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-

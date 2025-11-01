@@ -222,6 +222,7 @@ class _EventsPageState extends State<EventsPage> {
     final result = await showModalBottomSheet<FilterSheetResult>(
         context: context,
         isScrollControlled: true,
+        useRootNavigator: true,
         backgroundColor: Colors.transparent,
         builder: (_) => FilterBottomSheet(
               loadFilters: mockLoadFilters,
@@ -1080,7 +1081,6 @@ String _formatDateRangeDateOnlyEn(DateTime start, DateTime? end) {
   return '${start.day} ${_monthShortEn(start.month)} ${start.year} â€“ '
       '${end.day} ${_monthShortEn(end.month)} ${end.year}';
 }
-
 
 
 

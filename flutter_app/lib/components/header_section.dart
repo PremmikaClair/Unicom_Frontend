@@ -13,6 +13,9 @@ class HeaderSection extends StatelessWidget {
   /// true = เขียว/ขาว, false = ไล่ชมพู-ม่วงอ่อน
   final bool greenBackground;
 
+  /// โหมดโลโก้ล้วน (สำหรับบางหน้าที่ต้องการแสดงโลโก้ตรงกลางอย่างเดียว)
+  final bool centerLogoOnly;
+
   final String? greetingName;        // ชื่อผู้ใช้
   final String? subtitle;            // ข้อความใต้ชื่อ (optional)
   final Color backgroundColor;
@@ -23,6 +26,7 @@ class HeaderSection extends StatelessWidget {
     this.onSettingsTap,
     this.showBackground = false,     // ค่าเริ่มต้น: ไม่มีพื้นหลัง
     this.greenBackground = false,
+    this.centerLogoOnly = false,
     this.greetingName,
     this.subtitle,
     this.backgroundColor = Colors.transparent,
