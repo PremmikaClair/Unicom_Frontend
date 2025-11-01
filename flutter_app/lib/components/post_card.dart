@@ -4,6 +4,7 @@ import 'package:flutter_app/components/app_colors.dart';
 import 'package:flutter_app/models/post.dart' as models;
 import 'package:video_player/video_player.dart';
 import 'package:flutter_app/services/auth_service.dart';
+import 'package:flutter_app/services/database_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
@@ -472,7 +473,6 @@ class PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final avatar = _safeAvatar(post.profilePic);
 
     final media = <_MediaItem>[];
     if (post.images.isNotEmpty || post.videos.isNotEmpty) {
@@ -508,12 +508,10 @@ class PostCard extends StatelessWidget {
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onAvatarTap,
-                    child: CircleAvatar(
+                    child: _AuthorAvatar(
+                      userId: post.userId,
+                      initialUrl: post.profilePic,
                       radius: 18,
-                      backgroundImage: avatar,
-                      child: avatar == null
-                          ? const Icon(Icons.person, size: 18, color: Colors.black54)
-                          : null,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -666,6 +664,108 @@ class PostCard extends StatelessWidget {
       spans.add(TextSpan(text: text.substring(idx)));
     }
     return spans;
+  }
+}
+
+class _AuthorAvatar extends StatefulWidget {
+  final String userId;
+  final String? initialUrl;
+  final double radius;
+  const _AuthorAvatar({required this.userId, this.initialUrl, this.radius = 18, Key? key}) : super(key: key);
+
+  @override
+  State<_AuthorAvatar> createState() => _AuthorAvatarState();
+}
+
+class PostCardAvatarCache {
+  static final Map<String, String> _cache = <String, String>{};
+  static final ValueNotifier<int> version = ValueNotifier<int>(0);
+  static String? get(String uid) => _cache[uid];
+  static void set(String uid, String url) { _cache[uid] = url; version.value++; }
+  static void invalidate(String uid) { _cache.remove(uid); version.value++; }
+  static void clear() { _cache.clear(); version.value++; }
+}
+
+class _AuthorAvatarState extends State<_AuthorAvatar> {
+  String? _url;
+  final _db = DatabaseService();
+  int _lastVersion = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    final u0 = (widget.initialUrl ?? '').trim();
+    if (u0.isNotEmpty) {
+      _url = u0;
+    }
+    final uid = widget.userId.trim();
+    if (uid.isEmpty) return;
+    _listenCache();
+    final cached = PostCardAvatarCache.get(uid);
+    if (cached != null && cached.trim().isNotEmpty) {
+      if (_url != cached) setState(() { _url = cached; });
+    } else if ((_url ?? '').isEmpty) {
+      _fetch(uid);
+    }
+  }
+
+  void _listenCache() {
+    _lastVersion = PostCardAvatarCache.version.value;
+    PostCardAvatarCache.version.addListener(_onCacheChanged);
+  }
+
+  void _onCacheChanged() {
+    if (!mounted) return;
+    final v = PostCardAvatarCache.version.value;
+    if (v == _lastVersion) return;
+    _lastVersion = v;
+    final uid = widget.userId.trim();
+    if (uid.isEmpty) return;
+    final url = PostCardAvatarCache.get(uid);
+    if (url != null && url.isNotEmpty && url != _url) {
+      setState(() { _url = url; });
+    }
+  }
+
+  @override
+  void dispose() {
+    PostCardAvatarCache.version.removeListener(_onCacheChanged);
+    super.dispose();
+  }
+
+  Future<void> _fetch(String uid) async {
+    try {
+      final map = await _db.getUserByObjectIdFiber(uid);
+      final pic = (map['profile_pic'] ?? map['profile pic'])?.toString().trim();
+      if (!mounted) return;
+      if (pic != null && pic.isNotEmpty) {
+        PostCardAvatarCache.set(uid, pic);
+        setState(() { _url = pic; });
+      }
+    } catch (_) {
+      // ignore errors; keep placeholder
+    }
+  }
+
+  ImageProvider? _provider(String? src) {
+    if (src == null || src.isEmpty) return null;
+    if (src.startsWith('assets/')) return AssetImage(src);
+    final s = src.trim();
+    final uri = Uri.tryParse(s);
+    if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) return NetworkImage(s);
+    // If server returned a path like /uploads/..., make absolute
+    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final img = _provider(_url);
+    return CircleAvatar(
+      radius: widget.radius,
+      backgroundImage: img,
+      child: img == null ? const Icon(Icons.person, size: 18, color: Colors.black54) : null,
+    );
   }
 }
 

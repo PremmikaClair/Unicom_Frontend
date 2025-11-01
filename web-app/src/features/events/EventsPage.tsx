@@ -24,9 +24,11 @@ const EventsPage: React.FC = () => {
       const [perm, list] = await Promise.all([
         getAbilitiesWhere("event:create").catch(() => ({ orgs: [] } as any)),
         listEvents(),
-      ]);
+      ]);    
+      const filterlist = list.filter(item => item.status === "active");
+      
       setOrgs(perm?.orgs || []);
-      setRows(Array.isArray(list) ? list : []);
+      setRows(Array.isArray(filterlist) ? filterlist : []);
     } catch (e: any) {
       setError(e?.message || "Failed to load events");
     } finally {
