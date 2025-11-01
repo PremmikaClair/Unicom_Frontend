@@ -1,5 +1,6 @@
 // lib/pages/home_page.dart
 import 'package:flutter/material.dart';
+import '../utils/app_controls.dart';
 
 import '../components/post_card.dart';
 import '../models/post.dart';
@@ -721,7 +722,18 @@ class _HomePageState extends State<HomePage> {
     }
 
     const homeBg = Color(0xFFEDEDED);
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        final nav = Navigator.of(context);
+        if (nav.canPop()) {
+          nav.maybePop();
+        } else {
+          await AppControls.moveToBackground();
+        }
+      },
+      child: Scaffold(
       backgroundColor: homeBg,
       body: ColoredBox(
         color: homeBg,
@@ -739,6 +751,7 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
