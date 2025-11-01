@@ -422,7 +422,9 @@ class _PeopleMatch {
     }
 
     final username = deriveUsername();
-    final avatar = read(raw['profile_pic'] ?? raw['profilePic'] ?? raw['avatar_url'] ?? raw['avatar']);
+    final avatar = read(
+      raw['profile_pic'] 
+    );
 
     bool contains(String value) => value.toLowerCase().contains(lowerQuery);
     final matchable = <String>{

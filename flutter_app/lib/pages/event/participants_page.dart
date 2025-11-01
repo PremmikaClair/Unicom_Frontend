@@ -47,6 +47,8 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
   bool _sortAsc = false;
 
   late Future<void> _future;
+  bool _permissionChecked = false;
+  bool _hasPermission = false;
 
   @override
   void initState() {
@@ -55,6 +57,13 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
   }
 
   Future<void> _load() async {
+    // ตรวจสอบสิทธิ์: เห็นผู้เข้าร่วมได้เฉพาะอีเวนต์ที่ผู้ใช้มีสิทธิ์จัดการ
+    _hasPermission = await _checkPermission(widget.eventId);
+    _permissionChecked = true;
+    if (!_hasPermission) {
+      throw _PermissionDenied('permission_denied');
+    }
+
     final rows = await DatabaseService()
         .getEventParticipantsFiber(widget.eventId, status: _apiStatus);
 
@@ -63,6 +72,38 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
       for (int i = 0; i < rows.length; i++) _Participant.fromMap(rows[i], index: i),
     ];
     _applyFilters();
+  }
+
+  Future<bool> _checkPermission(String eventId) async {
+    try {
+      final db = DatabaseService();
+      final managed = await db.getManagedEventsFiber();
+
+      String? _flatId(dynamic v) {
+        if (v == null) return null;
+        if (v is String) return v.trim();
+        if (v is Map && v['\$oid'] != null) return v['\$oid'].toString();
+        if (v is Map && v['_id'] != null) return v['_id'].toString();
+        if (v is Map && v['id'] != null) return v['id'].toString();
+        return v.toString();
+      }
+
+      String _eventIdOf(Map<String, dynamic> m) {
+        final ev = m['event'];
+        final id = _flatId(m['eventId'] ?? m['id'] ?? (ev is Map ? (ev['id'] ?? ev['_id']) : null));
+        return (id ?? '').trim();
+      }
+
+      for (final m in managed) {
+        try {
+          final id = _eventIdOf(Map<String, dynamic>.from(m));
+          if (id.isNotEmpty && id == eventId) return true;
+        } catch (_) {}
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
@@ -195,9 +236,6 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
   // ===== BUILD (คงดีไซน์เดิม) =====
   @override
   Widget build(BuildContext context) {
-    const headerG1 = Color(0xFF7E9766);
-    const headerG2 = Color(0xFF7E9766);
-
     final w = MediaQuery.sizeOf(context).width;
     final isWide = w >= 800;
 
@@ -206,80 +244,77 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
     final double? percent = cap > 0 ? (total / cap).clamp(0.0, 1.0) : null;
 
     return Scaffold(
-      backgroundColor: headerG1,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        title: Text(widget.eventTitle ?? 'Participants'),
+      ),
+      backgroundColor: const Color(0xFFF7F8F3),
       body: FutureBuilder<void>(
         future: _future,
         builder: (context, snap) {
-          // header spacer
-          final topSpacer = SliverToBoxAdapter(
-            child: Container(
-              height: MediaQuery.of(context).padding.top + 6,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [headerG1, headerG2],
-                ),
-              ),
-            ),
-          );
-
           if (snap.connectionState == ConnectionState.waiting) {
-            return CustomScrollView(slivers: [
-              topSpacer,
-              const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            ]);
+            return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
-            return CustomScrollView(slivers: [
-              topSpacer,
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('โหลดข้อมูลไม่สำเร็จ'),
-                      const SizedBox(height: 8),
-                      Text('${snap.error}', style: const TextStyle(color: Colors.black54)),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: () => setState(() => _future = _load()),
-                        child: const Text('ลองใหม่'),
-                      ),
-                    ],
-                  ),
+            final isPerm = snap.error is _PermissionDenied ||
+                ('${snap.error}'.contains('permission_denied'));
+            if (isPerm) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.lock_outline, size: 48, color: Colors.black45),
+                    const SizedBox(height: 8),
+                    const Text('ไม่มีสิทธิ์ดูรายชื่อผู้เข้าร่วมอีเวนต์นี้'),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => Navigator.maybePop(context),
+                      child: const Text('ย้อนกลับ'),
+                    ),
+                  ],
                 ),
+              );
+            }
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('โหลดข้อมูลไม่สำเร็จ'),
+                  const SizedBox(height: 8),
+                  Text('${snap.error}', style: const TextStyle(color: Colors.black54)),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => setState(() => _future = _load()),
+                    child: const Text('ลองใหม่'),
+                  ),
+                ],
               ),
-            ]);
+            );
           }
+          return RefreshIndicator(
+            onRefresh: () async => setState(() => _future = _load()),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Material(
+                color: const Color(0xFFEDEDED),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(32)),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 16),
 
-          return CustomScrollView(
-            slivers: [
-              topSpacer,
-
-              // ===== เนื้อหาหลัก =====
-              SliverToBoxAdapter(
-                child: Material(
-                  color: const Color(0xFFEDEDED),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(32)),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 16),
-
-                      // KPI donut + ชื่ออีเวนต์ + เวลาเช็คอิน
-                      if (percent != null ||
-                          widget.eventTitle != null ||
-                          widget.checkinTimeLabel != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                    // KPI donut + ชื่ออีเวนต์ + เวลาเช็คอิน
+                    if (percent != null ||
+                        widget.eventTitle != null ||
+                        widget.checkinTimeLabel != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (percent != null)
                                 _KpiProgressCard(
@@ -424,24 +459,17 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
                         ),
                       ),
 
-                      const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                      // รายการ / ตาราง
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        child:
-                            isWide ? _buildTableSection() : _buildListSection(),
-                      ),
-                    ],
-                  ),
+                    // รายการ / ตาราง
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: isWide ? _buildTableSection() : _buildListSection(),
+                    ),
+                  ],
                 ),
               ),
-
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: const ColoredBox(color: Color(0xFFEDEDED)),
-              ),
-            ],
+            ),
           );
         },
       ),
@@ -544,6 +572,13 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
 
   static String _fmt(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+}
+
+class _PermissionDenied implements Exception {
+  final String message;
+  _PermissionDenied([this.message = 'Permission denied']);
+  @override
+  String toString() => message;
 }
 
 /// ===== UI pieces =====

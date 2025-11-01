@@ -1,6 +1,7 @@
 // lib/pages/profile_page.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
@@ -13,11 +14,11 @@ import '../../services/database_service.dart';
 
 import '../../models/user.dart';
 import '../../models/post.dart' as models;
+import '../../controllers/like_controller.dart';
 import '../../components/post_card_profile.dart';
 // Bring in avatar cache symbol without importing another PostCard
 import '../../components/post_card.dart' show PostCardAvatarCache;
 import 'dart:io';
-import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter_app/pages/profile/allergies.dart';
 import 'package:flutter_app/pages/profile/role_page.dart';
@@ -73,6 +74,8 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _usernameAlias;
   String? _phoneNumber;
   String? _avatarUrl;
+  final ImagePicker _avatarPicker = ImagePicker();
+  bool _uploadingAvatar = false;
 
   static const _kAliasKey = 'profile_username_alias';
   static const _kPhoneKey = 'profile_phone_number';
@@ -90,6 +93,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final Set<String> _liked = {};
   final Map<String, int> _likeCounts = {};
   final Map<String, int> _commentCounts = {};
+  FeedLikeController? _likes;
   String? _resolvedUid; // resolved user id when viewing others
   String? _myId; // current logged-in user id
   String? _postsNextCursor; // next cursor from getFeed for paging
@@ -480,6 +484,15 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
+    _likes = FeedLikeController(
+      db: _db,
+      setState: setState,
+      showSnack: (msg) {
+        final m = ScaffoldMessenger.maybeOf(context);
+        m?.hideCurrentSnackBar();
+        m?.showSnackBar(SnackBar(content: Text(msg)));
+      },
+    );
     _load();
   }
 
@@ -534,6 +547,15 @@ class _ProfilePageState extends State<ProfilePage> {
         if (resolved != null && resolved.isNotEmpty) {
           _resolvedUid = resolved;
         }
+        // Pull latest phone number from backend if present
+        try {
+          final tel = (map['telephone'] ?? map['phone'] ?? map['mobile'])?.toString();
+          if (tel != null && tel.trim().isNotEmpty) {
+            _phoneNumber = tel.trim();
+            final sp = await SharedPreferences.getInstance();
+            await sp.setString(_kPhoneKey, _phoneNumber!);
+          }
+        } catch (_) {}
         u = UserProfile.fromJson(map);
         if ((u.profilePic ?? '').toString().isNotEmpty) {
           _avatarUrl = u.profilePic;
@@ -638,6 +660,7 @@ class _ProfilePageState extends State<ProfilePage> {
         _posts.addAll(withName);
         _loadingPosts = false;
       });
+      _likes?.seedFromPosts(withName);
       _primeCountsFromPosts(withName);
     } catch (e) {
       safeSetState(() {
@@ -686,6 +709,7 @@ class _ProfilePageState extends State<ProfilePage> {
           _postsNextCursor = page.nextCursor;
           _postsFetchingMore = false;
         });
+        _likes?.seedFromPosts(withName);
         _primeCountsFromPosts(withName);
         return;
       }
@@ -699,6 +723,7 @@ class _ProfilePageState extends State<ProfilePage> {
           _feedCursor = pair.cursor;
           _postsFetchingMore = false;
         });
+        _likes?.seedFromPosts(withName);
         _primeCountsFromPosts(withName);
         return;
       }
@@ -1157,9 +1182,55 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _openPostDetail(models.Post p) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PostPage(post: p)),
+    // Sync current like/comment counts into the detail page, like Home/Search pages
+    final synced = models.Post(
+      id: p.id,
+      userId: p.userId,
+      profilePic: p.profilePic,
+      username: p.username,
+      category: p.category,
+      message: p.message,
+      likeCount: _likes?.likeCountOf(p) ?? p.likeCount,
+      comment: _likes?.commentCountOf(p) ?? p.comment,
+      isLiked: _likes?.isLiked(p) ?? p.isLiked,
+      authorRoles: p.authorRoles,
+      visibilityRoles: p.visibilityRoles,
+      timeStamp: p.timeStamp,
+      picture: p.picture,
+      video: p.video,
+      images: p.images,
+      videos: p.videos,
     );
+
+    final result = await Navigator.of(context).push<Map<String, dynamic>?>(
+      MaterialPageRoute(builder: (_) => PostPage(post: synced)),
+    );
+
+    if (!mounted || result == null) return;
+    if ((result['postId'] as String?) != p.id) return;
+
+    if (_likes != null) {
+      _likes!.applyFromDetail(
+        postId: p.id,
+        liked: result['liked'] as bool?,
+        likeCount: result['likeCount'] as int?,
+        commentCount: result['commentCount'] as int?,
+      );
+    } else {
+      final liked = result['liked'] as bool?;
+      final likeCount = result['likeCount'] as int?;
+      final commentCount = result['commentCount'] as int?;
+      final id = _pid(p);
+      if (id.isNotEmpty) {
+        safeSetState(() {
+          if (liked != null) {
+            if (liked) _liked.add(id); else _liked.remove(id);
+          }
+          if (likeCount != null) _likeCounts[id] = likeCount;
+          if (commentCount != null) _commentCounts[id] = commentCount;
+        });
+      }
+    }
   }
 
   Future<void> _openAllergies() async {
@@ -1271,14 +1342,16 @@ class _ProfilePageState extends State<ProfilePage> {
               itemBuilder: (context, i) {
                 final p = _posts[i];
                 final pid = _pid(p);
+                // Lazy ensure like state similar to HomePage
+                WidgetsBinding.instance.addPostFrameCallback((_) => _likes?.ensureLikeState(p));
                 return Padding(
                   padding: EdgeInsets.fromLTRB(8, i == 0 ? 4 : 0, 8, 8),
                   child: PostCard(
                     post: p,
-                    isLiked: _liked.contains(pid),
-                    likeCount: _likeCounts[pid] ?? 0,
-                    commentCount: _commentCounts[pid] ?? 0,
-                    onToggleLike: pid.isEmpty ? null : () => _toggleLikePost(pid),
+                    isLiked: _likes?.isLiked(p) ?? _liked.contains(pid),
+                    likeCount: _likes?.likeCountOf(p) ?? (_likeCounts[pid] ?? p.likeCount),
+                    commentCount: _likes?.commentCountOf(p) ?? (_commentCounts[pid] ?? p.comment),
+                    onToggleLike: () => _likes != null ? _likes!.toggleLike(p) : _toggleLikePost(pid),
                     onCommentTap: () => _openPostDetail(p),
                     onCardTap: () => _openPostDetail(p),
                     onAvatarTap: null,
@@ -1445,12 +1518,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     ],
                   ),
                 ),
-                if (_isMine)
-                  IconButton(
-                    tooltip: 'Edit phone number',
-                    onPressed: _openEditUsernamePhoneSheet,
-                    icon: const Icon(Icons.edit_note, color: Colors.black87),
-                  ),
+                // Removed edit phone number button per request
               ],
             ),
 
@@ -1671,7 +1739,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // -------- เปลี่ยนรูปโปรไฟล์ --------
+  // -------- เปลี่ยนรูปโปรไฟล์ (merge วิธีอัปโหลดจากอุปกรณ์/URL) --------
   Future<void> _changePhoto() async {
     if (!mounted) return;
     final ImagePicker picker = ImagePicker();
@@ -1679,6 +1747,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (file == null) return; // user cancelled
     await _uploadProfilePhotoFromDevice(file.path);
   }
+
 
  Future<void> _saveProfileChanges({
   required String username,
@@ -1698,46 +1767,13 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   try {
-    final base = AuthService.I.apiBase.endsWith('/')
-        ? AuthService.I.apiBase.substring(0, AuthService.I.apiBase.length - 1)
-        : AuthService.I.apiBase;
-    final headers = AuthService.I.headers(
-      extra: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
-    );
-
-    // Try minimal telephone-only first to avoid validation on username/avatar
-    final payloadVariants = <Map<String, dynamic>>[
-      {'telephone': phone},
-      // Common payloads used by different backends
-      {'username': username, 'phone': phone, 'avatarUrl': avatarUrl},
-      {'userName': username, 'phoneNumber': phone, 'photoUrl': avatarUrl},
-      {'alias': username, 'mobile': phone, 'avatar': avatarUrl},
-    ];
-
-    final endpoints = <Uri>[
-      Uri.parse('$base/users/myprofile'),
-      Uri.parse('$base/users/me'),
-      Uri.parse('$base/users/profile/me'),
-      Uri.parse('$base/profile/me'),
-      Uri.parse('$base/profile'),
-    ];
-
     bool ok = false;
-    for (final uri in endpoints) {
-      for (final body in payloadVariants) {
-        try {
-          final r = await http
-              .patch(uri, headers: headers, body: jsonEncode(body))
-              .timeout(const Duration(seconds: 10));
-          if (r.statusCode >= 200 && r.statusCode < 300) { ok = true; break; }
-
-          final r2 = await http
-              .put(uri, headers: headers, body: jsonEncode(body))
-              .timeout(const Duration(seconds: 10));
-          if (r2.statusCode >= 200 && r2.statusCode < 300) { ok = true; break; }
-        } catch (_) {}
-      }
-      if (ok) break;
+    try {
+      // Use the same endpoint as profile picture: multipart /users/profile_update
+      await _db.updateMyProfileFiber(telephone: phone);
+      ok = true;
+    } catch (_) {
+      ok = false;
     }
 
     // Feedback toast

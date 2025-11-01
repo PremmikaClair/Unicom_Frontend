@@ -222,6 +222,7 @@ class _EventsPageState extends State<EventsPage> {
     final result = await showModalBottomSheet<FilterSheetResult>(
         context: context,
         isScrollControlled: true,
+        useRootNavigator: true,
         backgroundColor: Colors.transparent,
         builder: (_) => FilterBottomSheet(
               loadFilters: mockLoadFilters,
@@ -556,7 +557,7 @@ class _EventsPageState extends State<EventsPage> {
                           }
 
                           items.sort((a, b) => a.event.startTime.compareTo(b.event.startTime));
-                          return _EventsList(items: items, onRefresh: _refresh);
+                          return _EventsList(items: items, onRefresh: _refresh, showManageButton: false);
                         },
                       ),
                       const SizedBox(height: 24),
@@ -592,7 +593,8 @@ class _EventsPageState extends State<EventsPage> {
 class _EventsList extends StatelessWidget {
   final List<_EventVM> items;
   final Future<void> Function()? onRefresh;
-  const _EventsList({required this.items, this.onRefresh});
+  final bool showManageButton;
+  const _EventsList({required this.items, this.onRefresh, this.showManageButton = false});
 
   @override
   Widget build(BuildContext context) {
@@ -616,7 +618,9 @@ class _EventsList extends StatelessWidget {
       itemCount: entries.length,
       itemBuilder: (ctx, i) {
         final e = entries[i];
-        return e.isHeader ? _MonthHeader(month: e.month!, year: e.year!) : _EventCard(vm: e.vm!, onRefresh: onRefresh);
+                        return e.isHeader
+                            ? _MonthHeader(month: e.month!, year: e.year!)
+                            : _EventCard(vm: e.vm!, onRefresh: onRefresh, showManageButton: showManageButton);
       },
     );
   }
@@ -687,7 +691,8 @@ class _EventVM {
 class _EventCard extends StatelessWidget {
   final _EventVM vm;
   final Future<void> Function()? onRefresh;
-  const _EventCard({required this.vm, this.onRefresh});
+  final bool showManageButton;
+  const _EventCard({required this.vm, this.onRefresh, this.showManageButton = false});
 
   static const double _imageW = 128;
   static const double _imageH = 104;
@@ -802,6 +807,30 @@ class _EventCard extends StatelessWidget {
                             ),
                           ],
                         ),
+                        if (showManageButton) ...[
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.sage,
+                                side: const BorderSide(color: AppColors.sage),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                minimumSize: const Size(0, 0),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ManageParticipantsPage(eventId: vm.event.id, eventTitle: vm.event.title),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.manage_accounts, size: 16),
+                              label: const Text('Manage'),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1052,7 +1081,6 @@ String _formatDateRangeDateOnlyEn(DateTime start, DateTime? end) {
   return '${start.day} ${_monthShortEn(start.month)} ${start.year} â€“ '
       '${end.day} ${_monthShortEn(end.month)} ${end.year}';
 }
-
 
 
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../components/app_colors.dart';
+import '../../services/database_service.dart';
 
 class AllergiesPage extends StatefulWidget {
   const AllergiesPage({super.key});
@@ -12,6 +13,40 @@ class _AllergiesPageState extends State<AllergiesPage> {
   // Start empty by default per request
   List<String> _foodAllergies = const [];
   List<String> _healthAllergies = const [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final me = await DatabaseService().getMeFiber();
+      List<String> _asList(dynamic v) {
+        if (v == null) return const [];
+        if (v is List) {
+          return v.map((e) => e?.toString() ?? '').where((s) => s.trim().isNotEmpty).map((s) => s.trim()).toList();
+        }
+        final s = v.toString().trim();
+        if (s.isEmpty) return const [];
+        // split by comma/semicolon/newline
+        return s.split(RegExp(r'[;,\n]')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      }
+
+      final disease = me['disease'] ?? me['Disease'];
+      final allergy = me['allergy'] ?? me['Allergy'] ?? me['allergies'];
+      setState(() {
+        _healthAllergies = _asList(disease);
+        _foodAllergies = _asList(allergy);
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() { _loading = false; });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,22 +63,20 @@ class _AllergiesPageState extends State<AllergiesPage> {
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
-      body: ListView(
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           _chipsSectionEditable(
             title: 'Food allergies',
             items: _foodAllergies,
-            onAdd: () => _promptAdd((v) => setState(() => _foodAllergies = [..._foodAllergies, v])),
-            onRemove: (v) => setState(() => _foodAllergies = _foodAllergies.where((e) => e != v).toList()),
           ),
           const SizedBox(height: 12),
           _chipsSectionEditable(
             title: 'Health allergies',
             items: _healthAllergies,
-            onAdd: () => _promptAdd((v) => setState(() => _healthAllergies = [..._healthAllergies, v])),
-            onRemove: (v) => setState(() => _healthAllergies = _healthAllergies.where((e) => e != v).toList()),
           ),
         ],
       ),
@@ -56,8 +89,6 @@ class _AllergiesPageState extends State<AllergiesPage> {
   Widget _chipsSectionEditable({
     required String title,
     required List<String> items,
-    required VoidCallback onAdd,
-    required void Function(String) onRemove,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -70,17 +101,7 @@ class _AllergiesPageState extends State<AllergiesPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline),
-                tooltip: 'Add allergies',
-                onPressed: onAdd,
-              ),
-            ],
-          ),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
           const SizedBox(height: 4),
           if (items.isEmpty)
             const Text('No items', style: TextStyle(color: Colors.black54))
@@ -89,10 +110,15 @@ class _AllergiesPageState extends State<AllergiesPage> {
               spacing: 8,
               runSpacing: 8,
               children: items
-                  .map((e) => InputChip(
-                        label: Text(e),
-                        onDeleted: () => onRemove(e),
-                        deleteIcon: const Icon(Icons.close, size: 16),
+                  .map((e) => Chip(
+                        label: Text(
+                          e,
+                          style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+                        ),
+                        backgroundColor: AppColors.sage.withOpacity(0.18),
+                        shape: StadiumBorder(
+                          side: BorderSide(color: AppColors.sage.withOpacity(0.5)),
+                        ),
                       ))
                   .toList(),
             ),

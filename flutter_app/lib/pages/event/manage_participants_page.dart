@@ -5,7 +5,9 @@ import '../../models/event.dart';
 import 'participants_page.dart';
 
 class ManageParticipantsPage extends StatefulWidget {
-  const ManageParticipantsPage({super.key});
+  final String? eventId;   // ถ้าส่งมา แสดงเฉพาะอีเวนต์นี้
+  final String? eventTitle;
+  const ManageParticipantsPage({super.key, this.eventId, this.eventTitle});
 
   @override
   State<ManageParticipantsPage> createState() => _ManageParticipantsPageState();
@@ -26,6 +28,9 @@ class _ManageParticipantsPageState extends State<ManageParticipantsPage> {
     final t = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
         title: const Text('Manage Participants'),
       ),
       body: FutureBuilder<List<AppEvent>>(

@@ -13,6 +13,9 @@ class HeaderSection extends StatelessWidget {
   /// true = เขียว/ขาว, false = ไล่ชมพู-ม่วงอ่อน
   final bool greenBackground;
 
+  /// โหมดโลโก้ล้วน (สำหรับบางหน้าที่ต้องการแสดงโลโก้ตรงกลางอย่างเดียว)
+  final bool centerLogoOnly;
+
   final String? greetingName;        // ชื่อผู้ใช้
   final String? subtitle;            // ข้อความใต้ชื่อ (optional)
   final Color backgroundColor;
@@ -23,6 +26,7 @@ class HeaderSection extends StatelessWidget {
     this.onSettingsTap,
     this.showBackground = false,     // ค่าเริ่มต้น: ไม่มีพื้นหลัง
     this.greenBackground = false,
+    this.centerLogoOnly = false,
     this.greetingName,
     this.subtitle,
     this.backgroundColor = Colors.transparent,
@@ -39,6 +43,58 @@ class HeaderSection extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final titleText = 'Hello ${_firstName(greetingName)}!';
 
+
+    // ---------- โหมดโลโก้ล้วน (ตรงกลาง) ----------
+    if (centerLogoOnly) {
+      final logo = SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                'assets/images/ourlogo.png',
+                height: 50,
+                fit: BoxFit.contain,
+                errorBuilder: (ctx, err, stack) => Image.asset(
+                  'assets/images/KU.png',
+                  height: 50,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (!showBackground) return logo;
+
+      final BoxDecoration bg = greenBackground
+          ? const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF)],
+              ),
+            )
+          : const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFF6D9F2), Color(0xFFE6E0FF)],
+              ),
+            );
+
+      return Container(
+        width: double.infinity,
+        decoration: bg,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [logo, if (greenBackground) const SizedBox(height: 6)],
+        ),
+      );
+    }
 
     // ---------- เนื้อหา ----------
     final content = SafeArea(
