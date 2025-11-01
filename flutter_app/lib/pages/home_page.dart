@@ -1,5 +1,6 @@
 // lib/pages/home_page.dart
 import 'package:flutter/material.dart';
+import '../utils/app_controls.dart';
 
 import '../components/app_colors.dart';
 // import '../components/header_section.dart'; // no longer used for Home header
@@ -749,7 +750,18 @@ class _HomePageState extends State<HomePage> {
     }
 
     const homeBg = Color(0xFFEDEDED);
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        final nav = Navigator.of(context);
+        if (nav.canPop()) {
+          nav.maybePop();
+        } else {
+          await AppControls.moveToBackground();
+        }
+      },
+      child: Scaffold(
       backgroundColor: homeBg,
       body: ColoredBox(
         color: homeBg,
@@ -767,6 +779,7 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
