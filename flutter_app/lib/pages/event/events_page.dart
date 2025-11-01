@@ -257,7 +257,8 @@ class _EventsPageState extends State<EventsPage> {
   bool get _canManageEvents => CurrentUser.roles.any((r) => kEventManagerRoles.contains(r));
 
   void _goCreateEvent() {
-    Navigator.of(context).push(
+    // เปิดหน้า CreateEvent แบบเต็มจอ ไม่อยู่ใต้ AppShell (ไม่มี bottom nav)
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => const CreateEventPage()),
     );
   }
@@ -310,7 +311,8 @@ class _EventsPageState extends State<EventsPage> {
 
     final showFab = _canCreate || _canManage;
     return Scaffold(
-      backgroundColor: headerG1,
+      // ให้พื้นหลังทั้งหน้ากลับเป็นสีปกติ (เขียวเฉพาะส่วนหัวเท่านั้น)
+      backgroundColor: Colors.white,
 
       body: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
@@ -325,9 +327,14 @@ class _EventsPageState extends State<EventsPage> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [headerG1, headerG2],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      stops: [0.0, 0.55, 1.0],
+                      colors: [
+                        Color(0xFFEAF5EF),
+                        Color(0xFFD1E8DA),
+                        Color(0xFFA9D1BC),
+                      ],
                     ),
                   ),
                   child: SafeArea(
@@ -349,16 +356,21 @@ class _EventsPageState extends State<EventsPage> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       const SizedBox(height: 22),
+                                      // ข้อความหัวข้อ: สีขาว เอียงเล็กน้อย พร้อมเงา (ตามตัวอย่าง)
                                       Text(
                                         'EVENTS',
                                         maxLines: 1,
                                         overflow: TextOverflow.clip,
                                         style: t.displaySmall?.copyWith(
                                           fontSize: 52,
-                                          color: const Color(0xFFF1F4EA),
+                                          color: Color.fromARGB(255, 253, 254, 253),
                                           fontWeight: FontWeight.w900,
                                           height: 0.90,
                                           letterSpacing: 1.5,
+                                          shadows: const [
+                                            Shadow(color: Colors.black26, offset: Offset(0, 3), blurRadius: 6),
+                                            Shadow(color: Colors.black12, offset: Offset(0, 8), blurRadius: 16),
+                                          ],
                                         ),
                                       ),
                                       const SizedBox(height: 4),
@@ -369,7 +381,7 @@ class _EventsPageState extends State<EventsPage> {
                                         overflow: TextOverflow.visible,
                                         style: t.titleLarge?.copyWith(
                                           fontSize: subtitleSize,
-                                          color: const Color(0xFF283128).withOpacity(.78),
+                                          color: Color(0xFF283128).withOpacity(.78),
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
@@ -407,7 +419,7 @@ class _EventsPageState extends State<EventsPage> {
                                     tooltip: 'Notifications',
                                     onPressed: _goNotifications,
                                     icon: const Icon(Icons.notifications_rounded),
-                                    color: const Color(0xFFF1F4EA),
+                                    color: AppColors.deepGreen,
                                     iconSize: 26,
                                     splashRadius: 22,
                                   ),
@@ -437,12 +449,7 @@ class _EventsPageState extends State<EventsPage> {
               ),
 
               // ===== Grey block (rounded top) + content =====
-              SliverToBoxAdapter(
-                child: Material(
-                  color: const Color(0xFFEDEDED),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
+              SliverToBoxAdapter(\n                child: Padding(\n                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 94), // bottom near AppShell\n                  child: Material(\n                    color: const Color(0xFFEDEDED),\n                    elevation: 6,\n                    borderRadius: BorderRadius.circular(32),\n                    clipBehavior: Clip.antiAlias,\n                    child: Column(
                     children: [
                       const SizedBox(height: 18),
 
@@ -580,7 +587,7 @@ class _EventsPageState extends State<EventsPage> {
               onOpenRequests: _goRequests,
               onOpenHistory: _goHistoryCreated,
               pendingCount: _pendingRequests,
-              mainColor: AppColors.sage,
+              mainColor: AppColors.deepGreen,
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -829,7 +836,7 @@ class _FabMenu extends StatefulWidget {
     required this.onOpenRequests,
     required this.onOpenHistory,
     required this.pendingCount,
-    this.mainColor = AppColors.sage,
+    this.mainColor = AppColors.deepGreen,
   });
 
   @override
@@ -1086,3 +1093,5 @@ String _formatDateRangeDateOnlyEn(DateTime start, DateTime? end) {
   return '${start.day} ${_monthShortEn(start.month)} ${start.year} – '
       '${end.day} ${_monthShortEn(end.month)} ${end.year}';
 }
+
+
