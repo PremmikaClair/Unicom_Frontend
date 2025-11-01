@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getAbilitiesWhere, listEvents, createEvent, deleteEvent } from "../../services/api";
+import { getAbilitiesWhere, listEvents, createEvent, deleteEvent, acceptEvent } from "../../services/api";
 import type { EventDoc } from "../../types";
 
 type WhereResp = { action: string; orgs: { org_path: string; label?: string }[]; version?: string };
@@ -15,9 +15,7 @@ const PendingEventsPage: React.FC = () => {
   // Create form state (minimal)
   const [topic, setTopic] = useState("");
   const [nodeIdHex, setNodeIdHex] = useState("");
-  const [orgOfContent, setOrgOfContent] = useState("/");
-
-  const canCreate = orgs.length > 0;
+  const [orgOfContent, setOrgOfContent] = useState("/"); 
 
   async function refetch() {
     setLoading(true);
@@ -27,8 +25,12 @@ const PendingEventsPage: React.FC = () => {
         getAbilitiesWhere("event:create").catch(() => ({ orgs: [] } as any)),
         listEvents(),
       ]);
+      console.log(list)
+    //   console.log(list[0]['visibility']['access']);
+      const filterlist = list.filter(item => item.status === "pending");
+    //   console.log(list);
       setOrgs(perm?.orgs || []);
-      setRows(Array.isArray(list) ? list : []);
+      setRows(Array.isArray(filterlist) ? filterlist : []);
     } catch (e: any) {
       setError(e?.message || "Failed to load events");
     } finally {
@@ -74,6 +76,17 @@ const PendingEventsPage: React.FC = () => {
       setRows(prev);
     }
   }
+  
+  async function handleAccept(id?: string) {
+    if (!id) return;
+    if (!window.confirm("Accept this event?")) return;
+    const prev = rows;
+    setRows(prev.filter(r => (r.id || r._id) !== id));
+    try { await acceptEvent(id); } catch (e: any) {
+      setError(e?.message || "Accept failed");
+      setRows(prev);
+    }
+  }
 
   const visible = useMemo(() => rows, [rows]);
 
@@ -102,10 +115,10 @@ const PendingEventsPage: React.FC = () => {
           <label className="text-sm text-gray-600">Org (path)</label>
           <input value={orgOfContent} onChange={e => setOrgOfContent(e.target.value)} placeholder="/faculty/eng/smo" className="px-3 py-2 border rounded w-64" />
         </div>
-        <button type="submit" disabled={!canCreate || !topic.trim() || !nodeIdHex.trim()} className={`px-3 py-2 rounded text-white ${canCreate ? 'bg-blue-600' : 'bg-gray-400 cursor-not-allowed'}`}>
+        {/* <button type="submit" disabled={!canCreate || !topic.trim() || !nodeIdHex.trim()} className={`px-3 py-2 rounded text-white ${canCreate ? 'bg-blue-600' : 'bg-gray-400 cursor-not-allowed'}`}>
           Create Event
-        </button>
-        {!canCreate && <span className="text-sm text-gray-600">No permission to create</span>}
+        </button> */}
+        {/* {!canCreate && <span className="text-sm text-gray-600">No permission to create</span>} */}
       </form>
 
       {/* Cards */}
@@ -119,6 +132,7 @@ const PendingEventsPage: React.FC = () => {
       <div className="grid gap-3">
         {!loading && visible.map(ev => {
           const id = ev.id || ev._id || "";
+        //   console.log(ev);
           const status = (ev.status || '').toLowerCase();
           const pill = status === 'hidden' ? 'border-amber-200 text-amber-800 bg-amber-50' : 'border-emerald-200 text-emerald-800 bg-emerald-50';
           const fmtDate = (s?: string) => {
@@ -178,7 +192,7 @@ const PendingEventsPage: React.FC = () => {
                             {(t1 || t2) && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-800 px-2 py-0.5">
                                 <span>🕒</span>
-                                <span className="font-medium">{t1}{t2 ? ` – ${t2}` : ''}</span>
+                                <span className="font-medium">{t1}{t2 ? ` ${t2}` : ''}</span>
                               </span>
                             )}
                           </div>
@@ -196,11 +210,22 @@ const PendingEventsPage: React.FC = () => {
                     })}
                   </div>
                 </div>
-              )}
+            )}
 
-              <div className="mt-3 flex items-center justify-end">
-                <button className="text-red-700 text-sm px-2 py-1 border rounded border-red-200" onClick={() => handleDelete(id)}>Delete</button>
-              </div>
+                <div className="mt-3 flex items-center justify-end">
+                    <button
+                    className="text-green-700 text-sm px-2 py-1 border rounded border-green-200 cursor-pointer hover:bg-green-50"
+                    onClick={() => handleAccept(id)}
+                    >
+                    Accept
+                    </button>
+                    <button
+                    className="text-red-700 text-sm px-2 py-1 border rounded border-red-200 cursor-pointer hover:bg-red-50"
+                    onClick={() => handleDelete(id)}
+                    >
+                    Reject
+                    </button>
+                </div>
             </div>
           );
         })}

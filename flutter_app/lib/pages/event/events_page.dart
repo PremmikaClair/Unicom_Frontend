@@ -896,7 +896,7 @@ class _FabMenuState extends State<_FabMenu> with SingleTickerProviderStateMixin 
       children: [
         // พื้นที่ปล่อยปุ่มย่อย
         Padding(
-          padding: const EdgeInsets.only(right: 16, bottom: 16),
+          padding: const EdgeInsets.only(right: 16, bottom: 72),
           child: SizedBox(
             width: 180,
             height: 180,
@@ -1043,7 +1043,7 @@ class _FabMenuState extends State<_FabMenu> with SingleTickerProviderStateMixin 
 
         // ปุ่มหลัก (+)
         Padding(
-          padding: const EdgeInsets.only(right: 16, bottom: 16),
+          padding: const EdgeInsets.only(right: 16, bottom: 72),
           child: FloatingActionButton(
             backgroundColor: widget.mainColor,
             shape: const CircleBorder(),

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../app_shell.dart';
 import '../login/auth_gate.dart';
@@ -14,6 +15,7 @@ import '../../services/database_service.dart';
 import '../../models/user.dart';
 import '../../models/post.dart' as models;
 import '../../components/post_card.dart';
+import 'dart:io';
 
 import 'package:flutter_app/pages/profile/allergies.dart';
 import 'package:flutter_app/pages/profile/role_page.dart';
@@ -512,13 +514,8 @@ class _ProfilePageState extends State<ProfilePage> {
       if (targetId != null && targetId.trim().isNotEmpty) {
         final map = await _db.getUserByObjectIdFiber(targetId.trim());
         u = UserProfile.fromJson(map);
-        // Prefer avatar from DB profile if present
-        final av = (map['profile_pic'] ?? map['profilePic'] ?? map['profile_picture'] ??
-                map['avatar_url'] ?? map['avatar'] ?? map['photo_url'] ?? map['photoUrl'] ?? map['avatarUrl'])
-            ?.toString()
-            .trim();
-        if (av != null && av.isNotEmpty) {
-          _avatarUrl = av;
+        if ((u.profilePic ?? '').toString().isNotEmpty) {
+          _avatarUrl = u.profilePic;
         }
       } else if (_isMine) {
         final map = await _db.getMeFiber();
@@ -527,13 +524,22 @@ class _ProfilePageState extends State<ProfilePage> {
         if (resolved != null && resolved.isNotEmpty) {
           _resolvedUid = resolved;
         }
+        // Pull latest phone number from backend if present
+        try {
+          final tel = (map['telephone'] ?? map['phone'] ?? map['mobile'])?.toString();
+          if (tel != null && tel.trim().isNotEmpty) {
+            _phoneNumber = tel.trim();
+            final sp = await SharedPreferences.getInstance();
+            await sp.setString(_kPhoneKey, _phoneNumber!);
+          }
+        } catch (_) {}
         u = UserProfile.fromJson(map);
-        final av = (map['profile_pic'] ?? map['profilePic'] ?? map['profile_picture'] ??
-                map['avatar_url'] ?? map['avatar'] ?? map['photo_url'] ?? map['photoUrl'] ?? map['avatarUrl'])
-            ?.toString()
-            .trim();
-        if (av != null && av.isNotEmpty) {
-          _avatarUrl = av;
+        if ((u.profilePic ?? '').toString().isNotEmpty) {
+          _avatarUrl = u.profilePic;
+          try {
+            final sp = await SharedPreferences.getInstance();
+            await sp.setString(_kAvatarUrlKey, _avatarUrl!);
+          } catch (_) {}
         }
       } else {
         // Viewing others without resolvable ID — build a minimal profile placeholder
@@ -703,6 +709,12 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  Future<void> _refreshPostsAfterDelete() async {
+    final u = _user;
+    if (u == null) return;
+    await _loadPostsFor(u);
+  }
+
   // Map posts so that username displays the owner's name for consistency
   List<models.Post> _mapPostsWithProfileName(List<models.Post> list, {UserProfile? owner}) {
     final o = owner ?? _user;
@@ -720,11 +732,15 @@ class _ProfilePageState extends State<ProfilePage> {
     }
     final name = display();
     if (name.isEmpty) return list;
-    final fallbackAvatar = (_avatarUrl ?? '').trim();
+    final avatar = (() {
+      if ((_avatarUrl ?? '').toString().isNotEmpty) return _avatarUrl!;
+      final p = o.profilePic; if (p != null && p.isNotEmpty) return p;
+      return null;
+    })();
     return list.map((p) => models.Post(
       id: p.id,
       userId: p.userId,
-      profilePic: p.profilePic.trim().isNotEmpty ? p.profilePic : fallbackAvatar,
+      profilePic: avatar ?? p.profilePic,
       username: name,
       category: p.category,
       message: p.message,
@@ -1169,10 +1185,7 @@ class _ProfilePageState extends State<ProfilePage> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _handleBack,
-        ),
+        automaticallyImplyLeading: false,
         actions: [
           if (_isMine)
             IconButton(
@@ -1430,12 +1443,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     ],
                   ),
                 ),
-                if (_isMine)
-                  IconButton(
-                    tooltip: 'Edit phone number',
-                    onPressed: _openEditUsernamePhoneSheet,
-                    icon: const Icon(Icons.edit_note, color: Colors.black87),
-                  ),
+                // Removed edit phone number button per request
               ],
             ),
 
@@ -1547,11 +1555,11 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   ImageProvider<Object>? _avatarProvider() {
-    final s = (_avatarUrl ?? '').trim();
-    if (s.isEmpty) return null;
-    if (s.startsWith('assets/')) return AssetImage(s);
-    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
-    if (s.startsWith('http://') || s.startsWith('https://')) return NetworkImage(s);
+    if (_avatarUrl != null && _avatarUrl!.isNotEmpty) {
+      return NetworkImage(_avatarUrl!);
+    }
+    final p = _user?.profilePic;
+    if (p != null && p.isNotEmpty) return NetworkImage(p);
     return null;
   }
 
@@ -1653,154 +1661,12 @@ class _ProfilePageState extends State<ProfilePage> {
   // -------- เปลี่ยนรูปโปรไฟล์ (merge วิธีอัปโหลดจากอุปกรณ์/URL) --------
   Future<void> _changePhoto() async {
     if (!mounted) return;
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Choose profile picture', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.photo_library),
-                  label: const Text('Upload from device'),
-                  onPressed: () async {
-                    final ImagePicker picker = ImagePicker();
-                    final XFile? file = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1600);
-                    if (file == null) return;
-                    if (!context.mounted) return;
-                    Navigator.of(context).pop('UPLOAD_LOCAL:'+file.path);
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _sampleAvatars.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8,
-                ),
-                itemBuilder: (context, index) {
-                  final url = _sampleAvatars[index];
-                  return InkWell(
-                    onTap: () => Navigator.of(context).pop(url),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(url, fit: BoxFit.cover),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.link),
-                  label: const Text('Use custom image URL'),
-                  onPressed: () async {
-                    final ctrl = TextEditingController();
-                    final url = await showDialog<String>(
-                      context: context,
-                      builder: (dctx) {
-                        return AlertDialog(
-                          title: const Text('Enter image URL'),
-                          content: TextField(
-                            controller: ctrl,
-                            decoration: const InputDecoration(hintText: 'https://...'),
-                          ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Cancel')),
-                            ElevatedButton(onPressed: () => Navigator.pop(dctx, ctrl.text.trim()), child: const Text('Use')),
-                          ],
-                        );
-                      },
-                    );
-                    if (url != null && url.isNotEmpty) {
-                      if (context.mounted) Navigator.of(context).pop(url);
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (selected == null || selected.isEmpty) return;
-    if (selected.startsWith('UPLOAD_LOCAL:')) {
-      final path = selected.substring('UPLOAD_LOCAL:'.length);
-      await _uploadProfilePhotoFromDevice(path);
-      return;
-    }
-    if (selected.startsWith('http://') || selected.startsWith('https://')) {
-      await _uploadProfilePhotoFromUrl(selected);
-      return;
-    }
-    await _saveProfileChanges(
-      username: _usernameAlias ?? '',
-      phone: _phoneNumber ?? '',
-      avatarUrl: selected,
-    );
+    final ImagePicker picker = ImagePicker();
+    final XFile? file = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1600);
+    if (file == null) return; // user cancelled
+    await _uploadProfilePhotoFromDevice(file.path);
   }
 
-  Future<void> _uploadProfilePhotoFromDevice(String path) async {
-    try {
-      final fname = path.split('/').last;
-      final url = await _db.uploadProfileAvatarFiber(imagePath: path, imageFilename: fname);
-      if (url != null && url.isNotEmpty) {
-        await _saveProfileChanges(
-          username: _usernameAlias ?? '',
-          phone: _phoneNumber ?? '',
-          avatarUrl: url,
-        );
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload error: $e')));
-      }
-    }
-  }
-
-  Future<void> _uploadProfilePhotoFromUrl(String url) async {
-    try {
-      final uri = Uri.parse(url);
-      final resp = await http.get(uri).timeout(const Duration(seconds: 15));
-      if (resp.statusCode >= 200 && resp.statusCode < 300) {
-        final fname = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'avatar.jpg';
-        final finalUrl = await _db.uploadProfileAvatarFiber(imageBytes: resp.bodyBytes, imageFilename: fname);
-        if (finalUrl != null && finalUrl.isNotEmpty) {
-          await _saveProfileChanges(
-            username: _usernameAlias ?? '',
-            phone: _phoneNumber ?? '',
-            avatarUrl: finalUrl,
-          );
-          return;
-        }
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload error: $e')));
-      }
-    }
-  }
 
  Future<void> _saveProfileChanges({
   required String username,
@@ -1820,46 +1686,13 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   try {
-    final base = AuthService.I.apiBase.endsWith('/')
-        ? AuthService.I.apiBase.substring(0, AuthService.I.apiBase.length - 1)
-        : AuthService.I.apiBase;
-    final headers = AuthService.I.headers(
-      extra: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
-    );
-
-    // Try minimal telephone-only first to avoid validation on username/avatar
-    final payloadVariants = <Map<String, dynamic>>[
-      {'telephone': phone},
-      // Common payloads used by different backends
-      {'username': username, 'phone': phone, 'avatarUrl': avatarUrl},
-      {'userName': username, 'phoneNumber': phone, 'photoUrl': avatarUrl},
-      {'alias': username, 'mobile': phone, 'avatar': avatarUrl},
-    ];
-
-    final endpoints = <Uri>[
-      Uri.parse('$base/users/myprofile'),
-      Uri.parse('$base/users/me'),
-      Uri.parse('$base/users/profile/me'),
-      Uri.parse('$base/profile/me'),
-      Uri.parse('$base/profile'),
-    ];
-
     bool ok = false;
-    for (final uri in endpoints) {
-      for (final body in payloadVariants) {
-        try {
-          final r = await http
-              .patch(uri, headers: headers, body: jsonEncode(body))
-              .timeout(const Duration(seconds: 10));
-          if (r.statusCode >= 200 && r.statusCode < 300) { ok = true; break; }
-
-          final r2 = await http
-              .put(uri, headers: headers, body: jsonEncode(body))
-              .timeout(const Duration(seconds: 10));
-          if (r2.statusCode >= 200 && r2.statusCode < 300) { ok = true; break; }
-        } catch (_) {}
-      }
-      if (ok) break;
+    try {
+      // Use the same endpoint as profile picture: multipart /users/profile_update
+      await _db.updateMyProfileFiber(telephone: phone);
+      ok = true;
+    } catch (_) {
+      ok = false;
     }
 
     // Feedback toast
@@ -1883,6 +1716,91 @@ class _ProfilePageState extends State<ProfilePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save failed: $e')));
   }
 }
+
+  // Upload local image to /users/profile_update and refresh avatar/profile
+  Future<void> _uploadProfilePhotoFromDevice(String imagePath) async {
+    try {
+      // Prefer bytes to avoid platform-specific path issues
+      Uint8List? bytes;
+      String? fname;
+      try {
+        final f = File(imagePath);
+        bytes = await f.readAsBytes();
+        fname = imagePath.split('/').isNotEmpty ? imagePath.split('/').last : 'profile.jpg';
+      } catch (_) {
+        bytes = null;
+      }
+      final r = (bytes != null && bytes.isNotEmpty)
+          ? await _db.updateMyProfileFiber(imageBytes: bytes, imageFilename: fname)
+          : await _db.updateMyProfileFiber(imagePath: imagePath);
+      final pic = (r['profile_pic'] ?? r['profile pic'] ?? (r['data'] is Map ? r['data']['profile_pic'] : null))?.toString();
+      if (pic != null && pic.isNotEmpty) {
+        _avatarUrl = pic;
+        // Broadcast to PostCard avatars
+        final uid = _stringId(_user?.oid) ?? _stringId(_user?.id) ?? _resolvedUid;
+        if (uid != null && uid.isNotEmpty) {
+          try { PostCardAvatarCache.set(uid, pic); } catch (_) {}
+        }
+        if (_isMine) {
+          try {
+            final sp = await SharedPreferences.getInstance();
+            await sp.setString(_kAvatarUrlKey, _avatarUrl!);
+          } catch (_) {}
+        }
+      }
+      try {
+        final me = await _db.getMeFiber();
+        if (!mounted) return;
+        safeSetState(() { _user = UserProfile.fromJson(me); });
+      } catch (_) {}
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile picture updated')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    }
+  }
+
+  // Upload image from a remote URL to the server (download then POST)
+  Future<void> _uploadProfilePhotoFromUrl(String url) async {
+    try {
+      final u = Uri.parse(url);
+      final res = await http.get(u, headers: AuthService.I.headers(extra: const {
+        'Accept': 'image/*,application/octet-stream,*/*',
+      }));
+      if (res.statusCode != 200) {
+        throw Exception('download failed: ${res.statusCode}');
+      }
+      final bytes = res.bodyBytes;
+      final name = u.path.split('/').isNotEmpty ? u.path.split('/').last : 'avatar.jpg';
+      final r = await _db.updateMyProfileFiber(imageBytes: bytes, imageFilename: name);
+      final pic = (r['profile_pic'] ?? r['profile pic'] ?? (r['data'] is Map ? r['data']['profile_pic'] : null))?.toString();
+      if (pic != null && pic.isNotEmpty) {
+        _avatarUrl = pic;
+        // Broadcast to PostCard avatars
+        final uid = _stringId(_user?.oid) ?? _stringId(_user?.id) ?? _resolvedUid;
+        if (uid != null && uid.isNotEmpty) {
+          try { PostCardAvatarCache.set(uid, pic); } catch (_) {}
+        }
+        if (_isMine) {
+          try {
+            final sp = await SharedPreferences.getInstance();
+            await sp.setString(_kAvatarUrlKey, _avatarUrl!);
+          } catch (_) {}
+        }
+      }
+      try {
+        final me = await _db.getMeFiber();
+        if (!mounted) return;
+        safeSetState(() { _user = UserProfile.fromJson(me); });
+      } catch (_) {}
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile picture updated')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    }
+  }
 
   String _deriveLocalFromEmail() {
     final email = _user?.email ?? '';

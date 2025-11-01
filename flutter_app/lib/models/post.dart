@@ -115,30 +115,7 @@ class Post {
     final userObj = _asMap(j['user']) ?? _asMap(j['author']) ?? _asMap(j['posted_by']) ?? _asMap(j['owner']);
     final authorRolesRaw = j['author_roles'] ?? j['Roles'];
     final visibilityRaw  = j['visibility_roles'];
-    // Prefer avatar directly on post first, then fall back to nested user object
-    final profile        =
-        j['profile_pic'] ??
-        j['profile pic'] ??
-        j['profilePic'] ??
-        j['profile_picture'] ??
-        j['avatar_url'] ??
-        j['avatarUrl'] ??
-        j['avatar'] ??
-        j['photo_url'] ??
-        j['photoUrl'] ??
-        j['photo'] ??
-        (userObj != null
-            ? (userObj['profile_pic'] ??
-               userObj['profile pic'] ??
-               userObj['profilePic'] ??
-               userObj['profile_picture'] ??
-               userObj['avatar_url'] ??
-               userObj['avatarUrl'] ??
-               userObj['avatar'] ??
-               userObj['photo_url'] ??
-               userObj['photoUrl'] ??
-               userObj['photo'])
-            : null);
+    final profile        = j['profile_pic'] ?? j['profile pic'] ?? (userObj?['profile_pic']) ?? (userObj?['profile pic']);
     final dateRaw        = j['createdAt'] ?? j['created_at'] ?? j['createdAT'] ??
                            j['timestamp'] ?? j['time_stamp'] ??
                            j['Date'] ?? j['date'];

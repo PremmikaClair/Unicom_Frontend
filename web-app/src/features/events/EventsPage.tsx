@@ -15,9 +15,7 @@ const EventsPage: React.FC = () => {
   // Create form state (minimal)
   const [topic, setTopic] = useState("");
   const [nodeIdHex, setNodeIdHex] = useState("");
-  const [orgOfContent, setOrgOfContent] = useState("/");
-
-  const canCreate = orgs.length > 0;
+  const [orgOfContent, setOrgOfContent] = useState("/"); 
 
   async function refetch() {
     setLoading(true);
@@ -26,9 +24,11 @@ const EventsPage: React.FC = () => {
       const [perm, list] = await Promise.all([
         getAbilitiesWhere("event:create").catch(() => ({ orgs: [] } as any)),
         listEvents(),
-      ]);
+      ]);    
+      const filterlist = list.filter(item => item.status === "active");
+      
       setOrgs(perm?.orgs || []);
-      setRows(Array.isArray(list) ? list : []);
+      setRows(Array.isArray(filterlist) ? filterlist : []);
     } catch (e: any) {
       setError(e?.message || "Failed to load events");
     } finally {
@@ -200,7 +200,12 @@ const EventsPage: React.FC = () => {
               )}
 
               <div className="mt-3 flex items-center justify-end">
-                <button className="text-red-700 text-sm px-2 py-1 border rounded border-red-200" onClick={() => handleDelete(id)}>Delete</button>
+                <button
+                  className="text-red-700 text-sm px-2 py-1 border rounded border-red-200 cursor-pointer hover:bg-red-50"
+                  onClick={() => handleDelete(id)}
+                >
+                  Delete
+                </button>
               </div>
             </div>
           );

@@ -4,10 +4,10 @@ import 'package:flutter_app/components/app_colors.dart';
 import 'package:flutter_app/models/post.dart' as models;
 import 'package:video_player/video_player.dart';
 import 'package:flutter_app/services/auth_service.dart';
-import 'package:flutter_app/services/database_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
+import 'package:flutter_app/services/database_service.dart';
 
 enum _MediaKind { image, video }
 
@@ -449,6 +449,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onCardTap;
   final VoidCallback? onAvatarTap;
   final void Function(String hashtag)? onHashtagTap;
+  final Future<void> Function()? onDeleted;
 
   const PostCard({
     super.key,
@@ -461,23 +462,20 @@ class PostCard extends StatelessWidget {
     this.onCardTap,
     this.onAvatarTap,
     this.onHashtagTap,
+    this.onDeleted,
   });
 
   ImageProvider? _safeAvatar(String? src) {
     if (src == null || src.trim().isEmpty) return null;
-    final s = src.trim();
-    if (s.startsWith('assets/')) return AssetImage(s);
-    // Support backend sending relative URLs like "/uploads/..."
-    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
-    final uri = Uri.tryParse(s);
-    if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) {
-      return NetworkImage(uri.toString());
-    }
-    return null;
+    if (src.startsWith('assets/')) return AssetImage(src);
+    final uri = Uri.tryParse(src.trim());
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) return null;
+    return NetworkImage(uri.toString());
   }
 
   @override
   Widget build(BuildContext context) {
+    final avatar = _safeAvatar(post.profilePic);
 
     final media = <_MediaItem>[];
     if (post.images.isNotEmpty || post.videos.isNotEmpty) {
@@ -513,10 +511,12 @@ class PostCard extends StatelessWidget {
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onAvatarTap,
-                    child: _AuthorAvatar(
-                      userId: post.userId,
-                      initialUrl: post.profilePic,
+                    child: CircleAvatar(
                       radius: 18,
+                      backgroundImage: avatar,
+                      child: avatar == null
+                          ? const Icon(Icons.person, size: 18, color: Colors.black54)
+                          : null,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -603,9 +603,74 @@ class PostCard extends StatelessWidget {
       ),
     );
 
+    Future<void> _confirmAndDelete() async {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          title: const Text(
+            'Delete post?',
+            style: TextStyle(color: AppColors.deepGreen),
+          ),
+          content: const Text(
+            'This action cannot be undone.',
+            style: TextStyle(color: AppColors.deepGreen),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              style: TextButton.styleFrom(foregroundColor: AppColors.deepGreen),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.deepGreen,
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      try {
+        await DatabaseService().deletePost(post.id);
+        if (onDeleted != null) {
+          await onDeleted!();
+        }
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post deleted')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+        }
+      }
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: card,
+      child: Stack(
+        children: [
+          card,
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Material(
+              color: Colors.transparent,
+              child: IconButton(
+                tooltip: 'Delete post',
+                visualDensity: VisualDensity.compact,
+                onPressed: _confirmAndDelete,
+                iconSize: 18,
+                icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.deepGreen),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -651,108 +716,6 @@ class PostCard extends StatelessWidget {
       spans.add(TextSpan(text: text.substring(idx)));
     }
     return spans;
-  }
-}
-
-class _AuthorAvatar extends StatefulWidget {
-  final String userId;
-  final String? initialUrl;
-  final double radius;
-  const _AuthorAvatar({required this.userId, this.initialUrl, this.radius = 18, Key? key}) : super(key: key);
-
-  @override
-  State<_AuthorAvatar> createState() => _AuthorAvatarState();
-}
-
-class PostCardAvatarCache {
-  static final Map<String, String> _cache = <String, String>{};
-  static final ValueNotifier<int> version = ValueNotifier<int>(0);
-  static String? get(String uid) => _cache[uid];
-  static void set(String uid, String url) { _cache[uid] = url; version.value++; }
-  static void invalidate(String uid) { _cache.remove(uid); version.value++; }
-  static void clear() { _cache.clear(); version.value++; }
-}
-
-class _AuthorAvatarState extends State<_AuthorAvatar> {
-  String? _url;
-  final _db = DatabaseService();
-  int _lastVersion = -1;
-
-  @override
-  void initState() {
-    super.initState();
-    final u0 = (widget.initialUrl ?? '').trim();
-    if (u0.isNotEmpty) {
-      _url = u0;
-    }
-    final uid = widget.userId.trim();
-    if (uid.isEmpty) return;
-    _listenCache();
-    final cached = PostCardAvatarCache.get(uid);
-    if (cached != null && cached.trim().isNotEmpty) {
-      if (_url != cached) setState(() { _url = cached; });
-    } else if ((_url ?? '').isEmpty) {
-      _fetch(uid);
-    }
-  }
-
-  void _listenCache() {
-    _lastVersion = PostCardAvatarCache.version.value;
-    PostCardAvatarCache.version.addListener(_onCacheChanged);
-  }
-
-  void _onCacheChanged() {
-    if (!mounted) return;
-    final v = PostCardAvatarCache.version.value;
-    if (v == _lastVersion) return;
-    _lastVersion = v;
-    final uid = widget.userId.trim();
-    if (uid.isEmpty) return;
-    final url = PostCardAvatarCache.get(uid);
-    if (url != null && url.isNotEmpty && url != _url) {
-      setState(() { _url = url; });
-    }
-  }
-
-  @override
-  void dispose() {
-    PostCardAvatarCache.version.removeListener(_onCacheChanged);
-    super.dispose();
-  }
-
-  Future<void> _fetch(String uid) async {
-    try {
-      final map = await _db.getUserByObjectIdFiber(uid);
-      final pic = (map['profile_pic'] ?? map['profile pic'])?.toString().trim();
-      if (!mounted) return;
-      if (pic != null && pic.isNotEmpty) {
-        PostCardAvatarCache.set(uid, pic);
-        setState(() { _url = pic; });
-      }
-    } catch (_) {
-      // ignore errors; keep placeholder
-    }
-  }
-
-  ImageProvider? _provider(String? src) {
-    if (src == null || src.isEmpty) return null;
-    if (src.startsWith('assets/')) return AssetImage(src);
-    final s = src.trim();
-    final uri = Uri.tryParse(s);
-    if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) return NetworkImage(s);
-    // If server returned a path like /uploads/..., make absolute
-    if (s.startsWith('/')) return NetworkImage('${AuthService.I.apiBase}$s');
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final img = _provider(_url);
-    return CircleAvatar(
-      radius: widget.radius,
-      backgroundImage: img,
-      child: img == null ? const Icon(Icons.person, size: 18, color: Colors.black54) : null,
-    );
   }
 }
 
