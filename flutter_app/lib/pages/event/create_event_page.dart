@@ -343,7 +343,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
             .where((q) => (q['question_text'] as String).isNotEmpty)
             .toList();
 
-        // --------- Payload: สร้างอีเวนต์แบบ DRAFT/inactive และมีฟอร์มหรือไม่ตามคำถามที่ใส่ ---------
+        // --------- Payload: สร้างอีเวนต์แบบ DRAFT/pending และมีฟอร์มหรือไม่ตามคำถามที่ใส่ ---------
         final payload = {
           'node_id': node_id,
           'NodeID': node_id,
@@ -352,7 +352,7 @@ class _CreateEventPageState extends State<CreateEventPage> {
           'max_participation': _toInt(_capacity.text),
           'posted_as': {'org_path': orgPath, 'position_key': posKey, 'label': labelForPostedAs ?? ''},
           'org_of_content': orgPath,
-          'status': 'inactive',
+          'status': 'pending',
           // Only mark have_form when there are actual non-empty questions
           'have_form': builtQuestions.isNotEmpty,
           'schedules': schedules,

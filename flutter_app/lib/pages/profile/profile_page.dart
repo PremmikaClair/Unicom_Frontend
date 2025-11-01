@@ -698,6 +698,12 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  Future<void> _refreshPostsAfterDelete() async {
+    final u = _user;
+    if (u == null) return;
+    await _loadPostsFor(u);
+  }
+
   // Map posts so that username displays the owner's name for consistency
   List<models.Post> _mapPostsWithProfileName(List<models.Post> list, {UserProfile? owner}) {
     final o = owner ?? _user;
@@ -1168,10 +1174,7 @@ class _ProfilePageState extends State<ProfilePage> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _handleBack,
-        ),
+        automaticallyImplyLeading: false,
         actions: [
           if (_isMine)
             IconButton(
@@ -1258,21 +1261,38 @@ class _ProfilePageState extends State<ProfilePage> {
                 final pid = _pid(p);
                 return Padding(
                   padding: EdgeInsets.fromLTRB(8, i == 0 ? 4 : 0, 8, 8),
-                  child: PostCard(
-                    post: p,
-                    isLiked: _liked.contains(pid),
-                    likeCount: _likeCounts[pid] ?? 0,
-                    commentCount: _commentCounts[pid] ?? 0,
-                    onToggleLike: pid.isEmpty ? null : () => _toggleLikePost(pid),
-                    onCommentTap: () => _openPostDetail(p),
-                    onCardTap: () => _openPostDetail(p),
-                    onAvatarTap: null,
-                    onHashtagTap: (tag) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Hashtag: #$tag')),
-                      );
-                    },
-                  ),
+                  child: (_isMine
+                      ? profile_card.PostCard(
+                          post: p,
+                          isLiked: _liked.contains(pid),
+                          likeCount: _likeCounts[pid] ?? 0,
+                          commentCount: _commentCounts[pid] ?? 0,
+                          onToggleLike: pid.isEmpty ? null : () => _toggleLikePost(pid),
+                          onCommentTap: () => _openPostDetail(p),
+                          onCardTap: () => _openPostDetail(p),
+                          onAvatarTap: null,
+                          onHashtagTap: (tag) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Hashtag: #$tag')),
+                            );
+                          },
+                          onDeleted: _refreshPostsAfterDelete,
+                        )
+                      : base_card.PostCard(
+                          post: p,
+                          isLiked: _liked.contains(pid),
+                          likeCount: _likeCounts[pid] ?? 0,
+                          commentCount: _commentCounts[pid] ?? 0,
+                          onToggleLike: pid.isEmpty ? null : () => _toggleLikePost(pid),
+                          onCommentTap: () => _openPostDetail(p),
+                          onCardTap: () => _openPostDetail(p),
+                          onAvatarTap: null,
+                          onHashtagTap: (tag) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Hashtag: #$tag')),
+                            );
+                          },
+                        )),
                 );
               },
             ),

@@ -86,6 +86,20 @@ class DatabaseService {
     return PagedResult(items: items, nextCursor: next);
   }
 
+  // DELETE /posts/:postId
+  Future<void> deletePost(String postId) async {
+    final uri = _buildUri('/posts/${Uri.encodeComponent(postId)}', {});
+    final res = await _client
+        .delete(
+          uri,
+          headers: _headers(const {'Accept': 'application/json'}),
+        )
+        .timeout(const Duration(seconds: 12));
+    if (res.statusCode != 200 && res.statusCode != 204 && res.statusCode != 202) {
+      throw HttpException('DELETE $uri -> ${res.statusCode}: ${res.body}');
+    }
+  }
+
   // ---------- Feed with server-side filters (/posts/feed) ----------
   // GET /posts/feed?limit=&cursor=&sort=&category=&role=
   Future<PagedResult<Post>> getFeed({
@@ -1154,36 +1168,77 @@ class DatabaseService {
     Map<String, dynamic>? postedAs, // { org_path, position_key }
     String? nodeId,
   }) async {
-    // Always use multipart; backend expects FormData with NodeID and postedAs.*
     final uri = _buildUri('/event', {});
+    // Always use multipart/form-data per backend spec, even without image.
     final req = http.MultipartRequest('POST', uri);
     req.headers.addAll(_headers(const {'Accept': 'application/json'}));
 
     // Required fields used by backend handler
     final pa = postedAs ?? payload['posted_as'] as Map<String, dynamic>?;
     final orgPath = (pa?['org_path'] ?? payload['org_of_content'] ?? '').toString();
-    final posKey  = (pa?['position_key'] ?? '').toString();
-    final nid     = (nodeId ?? payload['NodeID'] ?? payload['node_id'] ?? payload['nodeId'] ?? '').toString();
+    final posKey = (pa?['position_key'] ?? '').toString();
+    final nid = (nodeId ?? payload['NodeID'] ?? payload['node_id'] ?? payload['nodeId'] ?? '').toString();
     if (nid.isNotEmpty) req.fields['NodeID'] = nid;
     if (orgPath.isNotEmpty) req.fields['postedAs.org_path'] = orgPath;
     if (posKey.isNotEmpty) req.fields['postedAs.position_key'] = posKey;
 
-    // Optional extras: topic/description/capacity/visibility as flat fields for forward-compat
+    // Optional extras: topic/description/capacity/visibility/status
     void putField(String k) {
       final v = payload[k];
       if (v == null) return;
       final s = v is String ? v : jsonEncode(v);
       if (s.isNotEmpty) req.fields[k] = s;
     }
-    for (final k in ['topic','description','max_participation','visibility','org_of_content','status','have_form']) {
+    for (final k in ['topic', 'description', 'max_participation', 'visibility', 'org_of_content', 'status', 'have_form']) {
       putField(k);
     }
     if (payload['schedules'] != null) {
-      // Send schedules as JSON string
-      req.fields['schedules'] = jsonEncode(payload['schedules']);
+      // Send schedules as JSON string; in case backend ignores this in multipart,
+      // we also attach a full payload copy below as a safety net.
+      final schedJson = jsonEncode(payload['schedules']);
+      req.fields['schedules'] = schedJson;
+      // Alternate key casing often seen in handlers
+      req.fields['Schedules'] = schedJson;
+    
+      // Add flattened form fields to help servers that only bind indexed fields
+      // like schedules[0][time_start] or schedules.0.time_start
+      final List<dynamic> schedList = payload['schedules'] as List<dynamic>;
+      for (var i = 0; i < schedList.length; i++) {
+        final s = schedList[i];
+        if (s is! Map) continue;
+        Map<String, dynamic> m = Map<String, dynamic>.from(s as Map);
+        String f(String k) => (m[k] == null) ? '' : m[k].toString();
+        final pairs = <String, String>{
+          'date': f('date'),
+          'time_start': f('time_start'),
+          'time_end': f('time_end'),
+          // Common alias keys some backends expect
+          'start': f('start').isNotEmpty ? f('start') : f('time_start'),
+          'end': f('end').isNotEmpty ? f('end') : f('time_end'),
+          'location': f('location'),
+          'description': f('description'),
+        };
+        pairs.removeWhere((_, v) => v.isEmpty);
+        // Bracket notation
+        for (final e in pairs.entries) {
+          req.fields['schedules[$i][${e.key}]'] = e.value;
+        }
+        // Dot notation as fallback
+        for (final e in pairs.entries) {
+          req.fields['schedules.$i.${e.key}'] = e.value;
+        }
+        // Mixed dot+bracket (some frameworks use this)
+        for (final e in pairs.entries) {
+          req.fields['schedules[$i].${e.key}'] = e.value;
+          req.fields['schedules.$i[${e.key}]'] = e.value;
+        }
+      }
     }
+    // Safety net: include full payload for servers that parse a `payload` field
+    // from multipart to reconstruct the DTO.
+    req.fields['payload'] = jsonEncode(payload);
 
-    // Attach image if available
+    // Attach image when present
     if (imageBytes != null && imageBytes.isNotEmpty) {
       final fname = (imageFilename == null || imageFilename.isEmpty) ? 'cover.jpg' : imageFilename;
       req.files.add(http.MultipartFile.fromBytes('file', imageBytes, filename: fname));
