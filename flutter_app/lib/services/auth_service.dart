@@ -12,9 +12,11 @@ class AuthService {
   static final AuthService I = AuthService._();
 
   // Base like http://127.0.0.1:8000 (main-webbase)
+  // Default API base points to the deployed backend unless overridden at build time.
+  // To override at build: flutter run --dart-define=API_BASE_URL=http://host:port
   final String base = const String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
+    defaultValue: 'http://45.144.166.252:46603',
   );
 
   String? _token;
@@ -59,16 +61,23 @@ class AuthService {
   Uri apiUri(String path, [Map<String, String>? query]) {
     final p = path.startsWith('/') ? path : '/$path';
     final u = Uri.parse('$apiBase$p');
-    if (query == null) return u;
-    return u.replace(queryParameters: {
-      for (final e in query.entries)
-        if (e.value.isNotEmpty) e.key: e.value,
-    });
+    final qp = <String, String>{
+      // Cache buster to always fetch the latest (harmless for POST/PUT)
+      '_ts': DateTime.now().millisecondsSinceEpoch.toString(),
+      if (query != null)
+        for (final e in query.entries)
+          if (e.value.isNotEmpty) e.key: e.value,
+    };
+    return u.replace(queryParameters: qp);
   }
 
   Map<String, String> headers({Map<String, String>? extra}) {
     return {
       'Accept': 'application/json',
+      // Ask intermediaries not to cache so we always see the latest
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
       if (extra != null) ...extra,
       if (_token != null && _token!.isNotEmpty) 'Authorization': 'Bearer $_token',
     };

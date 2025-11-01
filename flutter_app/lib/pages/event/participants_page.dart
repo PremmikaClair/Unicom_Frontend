@@ -1,4 +1,4 @@
-// lib/pages/event/register_event_page.dart
+﻿// lib/pages/event/register_event_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:characters/characters.dart';

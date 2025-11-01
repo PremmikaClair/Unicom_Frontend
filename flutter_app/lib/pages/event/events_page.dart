@@ -1,4 +1,4 @@
-// lib/pages/event/events_page.dart
+﻿// lib/pages/event/events_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,13 +15,13 @@ import '../../services/database_service.dart';
 import '../noti/notifications_page.dart'; 
 import 'history_create_event_page.dart';
 
-/// แทนที่ด้วยแหล่งจริงของ roles ในแอปคุณ เช่น จาก Provider/Bloc/AuthService
+/// à¹à¸—à¸™à¸—à¸µà¹ˆà¸”à¹‰à¸§à¸¢à¹à¸«à¸¥à¹ˆà¸‡à¸ˆà¸£à¸´à¸‡à¸‚à¸­à¸‡ roles à¹ƒà¸™à¹à¸­à¸›à¸„à¸¸à¸“ à¹€à¸Šà¹ˆà¸™ à¸ˆà¸²à¸ Provider/Bloc/AuthService
 class CurrentUser {
-  /// สมมุติผู้ใช้ตอนนี้มี role 'head' (แก้ให้ดึงจริงในโปรเจกต์)
+  /// à¸ªà¸¡à¸¡à¸¸à¸•à¸´à¸œà¸¹à¹‰à¹ƒà¸Šà¹‰à¸•à¸­à¸™à¸™à¸µà¹‰à¸¡à¸µ role 'head' (à¹à¸à¹‰à¹ƒà¸«à¹‰à¸”à¸¶à¸‡à¸ˆà¸£à¸´à¸‡à¹ƒà¸™à¹‚à¸›à¸£à¹€à¸ˆà¸à¸•à¹Œ)
   static const Set<String> roles = {'student', 'head'};
 }
 
-/// roles ที่มีสิทธิ์เห็น/ใช้ FAB จัดการอีเวนต์
+/// roles à¸—à¸µà¹ˆà¸¡à¸µà¸ªà¸´à¸—à¸˜à¸´à¹Œà¹€à¸«à¹‡à¸™/à¹ƒà¸Šà¹‰ FAB à¸ˆà¸±à¸”à¸à¸²à¸£à¸­à¸µà¹€à¸§à¸™à¸•à¹Œ
 const Set<String> kEventManagerRoles = {'head', 'admin', 'organizer'};
 
 class EventsPage extends StatefulWidget {
@@ -35,7 +35,7 @@ class _EventsPageState extends State<EventsPage> {
   final _searchCtrl = TextEditingController();
   int _activeFiltersCount = 0;
   FilterSheetResult _filters = const FilterSheetResult();
-  int _pendingRequests = 1; // mock: ใส่จำนวนจริงจาก API ได้
+  int _pendingRequests = 1; // mock: à¹ƒà¸ªà¹ˆà¸ˆà¸³à¸™à¸§à¸™à¸ˆà¸£à¸´à¸‡à¸ˆà¸²à¸ API à¹„à¸”à¹‰
   bool _canCreate = false;   // derived from /event/manageable-orgs
   bool _canManage = false;   // derived from /event/managed
 
@@ -45,7 +45,7 @@ class _EventsPageState extends State<EventsPage> {
     _future = _fetchEventsFiber();
     _loadPendingRequests();
     _loadEventAbilities();
-    _loadUnreadNoti(); // << โหลดสถานะแจ้งเตือน
+    _loadUnreadNoti(); // << à¹‚à¸«à¸¥à¸”à¸ªà¸–à¸²à¸™à¸°à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™
   }
 
 
@@ -142,12 +142,12 @@ class _EventsPageState extends State<EventsPage> {
     await Future.wait([
       _future,
       _loadEventAbilities(),
-      _loadUnreadNoti(), // << รีเช็กสถานะแจ้งเตือน
+      _loadUnreadNoti(), // << à¸£à¸µà¹€à¸Šà¹‡à¸à¸ªà¸–à¸²à¸™à¸°à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™
     ]);
   }
 
 
-  bool _hasUnreadNoti = false; // << จุดแดง
+  bool _hasUnreadNoti = false; // << à¸ˆà¸¸à¸”à¹à¸”à¸‡
 
   Future<void> _loadUnreadNoti() async {
     try {
@@ -163,7 +163,7 @@ class _EventsPageState extends State<EventsPage> {
 
 
   Future<void> _loadPendingRequests() async {
-    // TODO: เปลี่ยนเป็นเรียก API จริง เช่น GET /requests?status=pending&countOnly=true
+    // TODO: à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¹€à¸›à¹‡à¸™à¹€à¸£à¸µà¸¢à¸ API à¸ˆà¸£à¸´à¸‡ à¹€à¸Šà¹ˆà¸™ GET /requests?status=pending&countOnly=true
     setState(() => _pendingRequests = 1); // mock
   }
 
@@ -243,7 +243,7 @@ class _EventsPageState extends State<EventsPage> {
 
   String _norm(String? s) => (s ?? '').toLowerCase().trim();
 
-  // map ชื่อหมวดจากข้อมูลอีเวนต์ -> id ของฟิลเตอร์
+  // map à¸Šà¸·à¹ˆà¸­à¸«à¸¡à¸§à¸”à¸ˆà¸²à¸à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸­à¸µà¹€à¸§à¸™à¸•à¹Œ -> id à¸‚à¸­à¸‡à¸Ÿà¸´à¸¥à¹€à¸•à¸­à¸£à¹Œ
   String _mapCategory(String? cat) {
     final k = _norm(cat);
     const alias = {
@@ -257,15 +257,20 @@ class _EventsPageState extends State<EventsPage> {
   bool get _canManageEvents => CurrentUser.roles.any((r) => kEventManagerRoles.contains(r));
 
   void _goCreateEvent() {
-    // เปิดหน้า CreateEvent แบบเต็มจอ ไม่อยู่ใต้ AppShell (ไม่มี bottom nav)
-    Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => const CreateEventPage()),
-    );
+    // Open CreateEventPage on the root navigator so it is not under AppShell
+    // and refresh list after success
+    Navigator.of(context, rootNavigator: true)
+        .push<bool>(MaterialPageRoute(builder: (_) => const CreateEventPage()))
+        .then((ok) {
+      if (ok == true) {
+        _refresh();
+      }
+    });
   }
 
   void _goCheckIn() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('TODO: นำทางไปหน้าเช็คอิน/รายชื่อผู้ลงทะเบียน')),
+      const SnackBar(content: Text('TODO: à¸™à¸³à¸—à¸²à¸‡à¹„à¸›à¸«à¸™à¹‰à¸²à¹€à¸Šà¹‡à¸„à¸­à¸´à¸™/à¸£à¸²à¸¢à¸Šà¸·à¹ˆà¸­à¸œà¸¹à¹‰à¸¥à¸‡à¸—à¸°à¹€à¸šà¸µà¸¢à¸™')),
     );
   }
 
@@ -276,20 +281,16 @@ class _EventsPageState extends State<EventsPage> {
     if (mounted) _loadPendingRequests(); // refresh badge (optional)
   }
 
-  // เปิดหน้าประวัติอีเวนต์ที่เราสร้างเอง
-  void _goHistoryCreated() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const HistoryCreateEventPage()),
-    );
-  }
+  // à¹€à¸›à¸´à¸”à¸«à¸™à¹‰à¸²à¸›à¸£à¸°à¸§à¸±à¸•à¸´à¸­à¸µà¹€à¸§à¸™à¸•à¹Œà¸—à¸µà¹ˆà¹€à¸£à¸²à¸ªà¸£à¹‰à¸²à¸‡à¹€à¸­à¸‡
+  // Removed: goHistoryCreated (history page no longer used)
 
-  // ✅ นำทางไปหน้า Notifications
+  // âœ… à¸™à¸³à¸—à¸²à¸‡à¹„à¸›à¸«à¸™à¹‰à¸² Notifications
   void _goNotifications() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const NotificationsPage()),
     );
     if (mounted) {
-      _loadUnreadNoti(); // << กลับมาแล้วรีเฟรชจุดแดง
+      _loadUnreadNoti(); // << à¸à¸¥à¸±à¸šà¸¡à¸²à¹à¸¥à¹‰à¸§à¸£à¸µà¹€à¸Ÿà¸£à¸Šà¸ˆà¸¸à¸”à¹à¸”à¸‡
     }
   }
 
@@ -311,8 +312,7 @@ class _EventsPageState extends State<EventsPage> {
 
     final showFab = _canCreate || _canManage;
     return Scaffold(
-      // ให้พื้นหลังทั้งหน้ากลับเป็นสีปกติ (เขียวเฉพาะส่วนหัวเท่านั้น)
-      backgroundColor: Colors.white,
+      backgroundColor: const Color.fromARGB(255, 43, 61, 26),
 
       body: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
@@ -327,24 +327,19 @@ class _EventsPageState extends State<EventsPage> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      stops: [0.0, 0.55, 1.0],
-                      colors: [
-                        Color(0xFFEAF5EF),
-                        Color(0xFFD1E8DA),
-                        Color(0xFFA9D1BC),
-                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [headerG1, headerG2],
                     ),
                   ),
                   child: SafeArea(
                     bottom: false,
                     child: SizedBox(
                       height: illoHeight,
-                      // ✅ ครอบด้วย Stack เพื่อวางปุ่มกระดิ่งมุมขวาบน
+                      // âœ… à¸„à¸£à¸­à¸šà¸”à¹‰à¸§à¸¢ Stack à¹€à¸žà¸·à¹ˆà¸­à¸§à¸²à¸‡à¸›à¸¸à¹ˆà¸¡à¸à¸£à¸°à¸”à¸´à¹ˆà¸‡à¸¡à¸¸à¸¡à¸‚à¸§à¸²à¸šà¸™
                       child: Stack(
                         children: [
-                          // เนื้อหาหลักเดิม
+                          // à¹€à¸™à¸·à¹‰à¸­à¸«à¸²à¸«à¸¥à¸±à¸à¹€à¸”à¸´à¸¡
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -356,21 +351,16 @@ class _EventsPageState extends State<EventsPage> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       const SizedBox(height: 22),
-                                      // ข้อความหัวข้อ: สีขาว เอียงเล็กน้อย พร้อมเงา (ตามตัวอย่าง)
                                       Text(
                                         'EVENTS',
                                         maxLines: 1,
                                         overflow: TextOverflow.clip,
                                         style: t.displaySmall?.copyWith(
                                           fontSize: 52,
-                                          color: Color.fromARGB(255, 253, 254, 253),
+                                          color: const Color(0xFFF1F4EA),
                                           fontWeight: FontWeight.w900,
                                           height: 0.90,
                                           letterSpacing: 1.5,
-                                          shadows: const [
-                                            Shadow(color: Colors.black26, offset: Offset(0, 3), blurRadius: 6),
-                                            Shadow(color: Colors.black12, offset: Offset(0, 8), blurRadius: 16),
-                                          ],
                                         ),
                                       ),
                                       const SizedBox(height: 4),
@@ -381,7 +371,7 @@ class _EventsPageState extends State<EventsPage> {
                                         overflow: TextOverflow.visible,
                                         style: t.titleLarge?.copyWith(
                                           fontSize: subtitleSize,
-                                          color: Color(0xFF283128).withOpacity(.78),
+                                          color: const Color(0xFF283128).withOpacity(.78),
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
@@ -408,7 +398,7 @@ class _EventsPageState extends State<EventsPage> {
                             ],
                           ),
 
-                          // Notification มุมขวาบน
+                          // Notification à¸¡à¸¸à¸¡à¸‚à¸§à¸²à¸šà¸™
                             Positioned(
                               right: 0,
                               top: -8,
@@ -419,13 +409,13 @@ class _EventsPageState extends State<EventsPage> {
                                     tooltip: 'Notifications',
                                     onPressed: _goNotifications,
                                     icon: const Icon(Icons.notifications_rounded),
-                                    color: AppColors.deepGreen,
+                                    color: const Color(0xFFF1F4EA),
                                     iconSize: 26,
                                     splashRadius: 22,
                                   ),
                                   if (_hasUnreadNoti)
                                     Positioned(
-                                      right: 12,  // ปรับตำแหน่งได้ตามใจ
+                                      right: 12,  // à¸›à¸£à¸±à¸šà¸•à¸³à¹à¸«à¸™à¹ˆà¸‡à¹„à¸”à¹‰à¸•à¸²à¸¡à¹ƒà¸ˆ
                                       top: 13,
                                       child: Container(
                                         width: 9,
@@ -449,7 +439,12 @@ class _EventsPageState extends State<EventsPage> {
               ),
 
               // ===== Grey block (rounded top) + content =====
-              SliverToBoxAdapter(\n                child: Padding(\n                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 94), // bottom near AppShell\n                  child: Material(\n                    color: const Color(0xFFEDEDED),\n                    elevation: 6,\n                    borderRadius: BorderRadius.circular(32),\n                    clipBehavior: Clip.antiAlias,\n                    child: Column(
+              SliverToBoxAdapter(
+                child: Material(
+                  color: const Color(0xFFEDEDED),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
                     children: [
                       const SizedBox(height: 18),
 
@@ -579,15 +574,14 @@ class _EventsPageState extends State<EventsPage> {
         ),
       ),
 
-      // ===== FAB — inline menu =====
+      // ===== FAB â€” inline menu =====
       floatingActionButton: showFab
           ? _FabMenu(
               onCreate: _goCreateEvent,
               onCheckIn: _goCheckIn,
               onOpenRequests: _goRequests,
-              onOpenHistory: _goHistoryCreated,
               pendingCount: _pendingRequests,
-              mainColor: AppColors.deepGreen,
+              mainColor: AppColors.sage,
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -821,22 +815,20 @@ class _EventCard extends StatelessWidget {
   }
 }
 
-/// ===== FAB Menu (กด + แล้วเด้งปุ่มย่อย) =====
+/// ===== FAB Menu (à¸à¸” + à¹à¸¥à¹‰à¸§à¹€à¸”à¹‰à¸‡à¸›à¸¸à¹ˆà¸¡à¸¢à¹ˆà¸­à¸¢) =====
 class _FabMenu extends StatefulWidget {
   final VoidCallback onCreate;
   final VoidCallback onCheckIn;
   final VoidCallback onOpenRequests;
-  final VoidCallback onOpenHistory;
-  final int pendingCount;
+    final int pendingCount;
   final Color mainColor;
 
   const _FabMenu({
     required this.onCreate,
     required this.onCheckIn,
     required this.onOpenRequests,
-    required this.onOpenHistory,
     required this.pendingCount,
-    this.mainColor = AppColors.deepGreen,
+    this.mainColor = AppColors.sage,
   });
 
   @override
@@ -873,16 +865,16 @@ class _FabMenuState extends State<_FabMenu> with SingleTickerProviderStateMixin 
     return Stack(
       alignment: Alignment.bottomRight,
       children: [
-        // พื้นที่ปล่อยปุ่มย่อย
+        // à¸žà¸·à¹‰à¸™à¸—à¸µà¹ˆà¸›à¸¥à¹ˆà¸­à¸¢à¸›à¸¸à¹ˆà¸¡à¸¢à¹ˆà¸­à¸¢
         Padding(
-          padding: const EdgeInsets.only(right: 16, bottom: 72),
+          padding: const EdgeInsets.only(right: 16, bottom: 88),
           child: SizedBox(
             width: 180,
             height: 180,
             child: Stack(
               alignment: Alignment.bottomRight,
               children: [
-                // >> Requests (ปรับให้เยื้องขึ้นซ้าย 225°)
+                // >> Requests (à¸›à¸£à¸±à¸šà¹ƒà¸«à¹‰à¹€à¸¢à¸·à¹‰à¸­à¸‡à¸‚à¸¶à¹‰à¸™à¸‹à¹‰à¸²à¸¢ 225Â°)
                 AnimatedBuilder(
                   animation: _curve,
                   builder: (_, __) {
@@ -947,7 +939,7 @@ class _FabMenuState extends State<_FabMenu> with SingleTickerProviderStateMixin 
 
                 // (Check-in button removed as requested)
 
-                // >> Create (ประมาณ 270° ตรงขึ้นบน)
+                // >> Create (à¸›à¸£à¸°à¸¡à¸²à¸“ 270Â° à¸•à¸£à¸‡à¸‚à¸¶à¹‰à¸™à¸šà¸™)
                 AnimatedBuilder(
                   animation: _curve,
                   builder: (_, __) {
@@ -981,54 +973,21 @@ class _FabMenuState extends State<_FabMenu> with SingleTickerProviderStateMixin 
                     );
                   },
                 ),
-
-                // >> History (ประมาณ 180° ไปทางซ้าย)
-                AnimatedBuilder(
-                  animation: _curve,
-                  builder: (_, __) {
-                    final rad = 180 * 3.1415926535 / 180.0;
-                    final offset = Offset.fromDirection(rad, 72 * _curve.value);
-                    return Transform.translate(
-                      offset: offset,
-                      child: Opacity(
-                        opacity: _curve.value.clamp(0.0, 1.0),
-                        child: Material(
-                          color: widget.mainColor,
-                          elevation: 3,
-                          shape: const CircleBorder(),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            splashColor: Colors.transparent,
-                            highlightColor: Colors.transparent,
-                            onTap: () {
-                              _toggle();
-                              widget.onOpenHistory();
-                            },
-                            child: const SizedBox(
-                              width: 50,
-                              height: 50,
-                              child: Icon(Icons.history_rounded, size: 22, color: Colors.white),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                
               ],
             ),
           ),
         ),
 
-        // ปุ่มหลัก (+)
+        // à¸›à¸¸à¹ˆà¸¡à¸«à¸¥à¸±à¸ (+)
         Padding(
-          padding: const EdgeInsets.only(right: 16, bottom: 72),
+          padding: const EdgeInsets.only(right: 16, bottom: 88),
           child: FloatingActionButton(
             backgroundColor: widget.mainColor,
             shape: const CircleBorder(),
             onPressed: _toggle,
             child: AnimatedRotation(
-              turns: _open ? 0.125 : 0, // หมุน 45°
+              turns: _open ? 0.125 : 0, // à¸«à¸¡à¸¸à¸™ 45Â°
               duration: const Duration(milliseconds: 160),
               child: const Icon(Icons.add, color: Colors.white),
             ),
@@ -1084,14 +1043,17 @@ String _formatDateRangeDateOnlyEn(DateTime start, DateTime? end) {
     return '${start.day} ${_monthShortEn(start.month)} ${start.year}';
   }
   if (start.year == end.year && start.month == end.month) {
-    return '${start.day}–${end.day} ${_monthShortEn(start.month)} ${start.year}';
+    return '${start.day}â€“${end.day} ${_monthShortEn(start.month)} ${start.year}';
   }
   if (start.year == end.year) {
-    return '${start.day} ${_monthShortEn(start.month)} ${start.year} – '
+    return '${start.day} ${_monthShortEn(start.month)} ${start.year} â€“ '
         '${end.day} ${_monthShortEn(end.month)} ${end.year}';
   }
-  return '${start.day} ${_monthShortEn(start.month)} ${start.year} – '
+  return '${start.day} ${_monthShortEn(start.month)} ${start.year} â€“ '
       '${end.day} ${_monthShortEn(end.month)} ${end.year}';
 }
+
+
+
 
 

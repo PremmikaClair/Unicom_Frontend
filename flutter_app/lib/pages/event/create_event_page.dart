@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../services/database_service.dart';
 import '../../components/visibility_selector.dart';
 import '../../components/app_colors.dart'; 
-
+import 'events_page.dart'; 
 /* ---------- Models ---------- */
 class DayPlan {
   DateTime date;
@@ -437,7 +437,11 @@ class _CreateEventPageState extends State<CreateEventPage> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () {
+                  // Close dialog then close CreateEventPage, returning success
+                  Navigator.of(context, rootNavigator: true).pop();
+                  Navigator.of(context, rootNavigator: true).pop(true);
+                },
                 child: const Text('OK', style: TextStyle(color: AppColors.deepGreen, fontWeight: FontWeight.w700)),
               ),
             ],
@@ -1252,3 +1256,4 @@ class _CenteredStepper extends StatelessWidget {
     );
   }
 }
+
