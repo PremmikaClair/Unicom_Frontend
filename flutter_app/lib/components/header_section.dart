@@ -15,8 +15,7 @@ class HeaderSection extends StatelessWidget {
 
   final String? greetingName;        // ชื่อผู้ใช้
   final String? subtitle;            // ข้อความใต้ชื่อ (optional)
-  // เมื่อ true: แสดงเฉพาะโลโก้ตรงกลาง (ไม่มีข้อความใด ๆ)
-  final bool centerLogoOnly;
+  final Color backgroundColor;
 
   const HeaderSection({
     super.key,
@@ -26,7 +25,7 @@ class HeaderSection extends StatelessWidget {
     this.greenBackground = false,
     this.greetingName,
     this.subtitle,
-    this.centerLogoOnly = false,
+    this.backgroundColor = Colors.transparent,
   });
 
   String _firstName(String? s) {
@@ -38,8 +37,8 @@ class HeaderSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final titleText = 'Hello ${_firstName(greetingName)},';
-    final subText = subtitle ?? "Let's Elevate Your Skin's Health";
+    final titleText = 'Hello ${_firstName(greetingName)}!';
+
 
     // ---------- โหมดโลโก้ล้วน (ตรงกลาง) ----------
     if (centerLogoOnly) {
@@ -103,16 +102,19 @@ class HeaderSection extends StatelessWidget {
           children: [
             // Left: Title + Subtitle
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    titleText,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      titleText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w800,
-                          color: Colors.black87,
+                          color: const Color.fromARGB(221, 13, 60, 30),
                           height: 1.0,
                         ) ??
                         const TextStyle(
@@ -121,27 +123,11 @@ class HeaderSection extends StatelessWidget {
                           color: Colors.black87,
                           height: 1.0,
                         ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    subText,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.bodyMedium?.copyWith(
-                          color: Colors.black54,
-                          height: 1.2,
-                        ) ??
-                        const TextStyle(
-                          fontSize: 14,
-                          color: Colors.black54,
-                          height: 1.2,
-                        ),
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
-
-            const SizedBox(width: 12),
 
             // Right: โลโก้ตัวอักษร "KUCOM" โทนเขียวเมทัลลิก (กดได้)
             GestureDetector(
@@ -154,7 +140,12 @@ class HeaderSection extends StatelessWidget {
     );
 
     // ---------- ไม่มีพื้นหลัง ----------
-    if (!showBackground) return content;
+    final wrappedContent = Container(
+      color: backgroundColor,
+      child: content,
+    );
+
+    if (!showBackground) return wrappedContent;
 
     // ---------- พื้นหลัง (ใช้เมื่อ showBackground = true) ----------
     final BoxDecoration bg = greenBackground
@@ -174,14 +165,17 @@ class HeaderSection extends StatelessWidget {
           );
 
     return Container(
-      width: double.infinity,
-      decoration: bg,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          content,
-          if (greenBackground) const SizedBox(height: 6),
-        ],
+      color: backgroundColor,
+      child: Container(
+        width: double.infinity,
+        decoration: bg,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            content,
+            if (greenBackground) const SizedBox(height: 6),
+          ],
+        ),
       ),
     );
   }
@@ -189,107 +183,15 @@ class HeaderSection extends StatelessWidget {
 
 /// โลโก้ตัวอักษร "KUCOM" โทนเขียวเมทัลลิก (แนวเดียวกับภาพตัวอย่าง)
 class KucomWordmarkGreen extends StatelessWidget {
-  final double size; // ความสูงของตัวอักษร
+  final double size; // ความสูงของโลโก้
   const KucomWordmarkGreen({super.key, this.size = 34});
 
   @override
   Widget build(BuildContext context) {
-    // ไล่เฉดเขียวเมทัลลิก
-    final LinearGradient metallicGreen = const LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        Color(0xFFEFFAF1), // ไฮไลต์เกือบขาวอมเขียว
-        Color(0xFFA8E6B5), // เขียวสว่าง
-        Color(0xFF45A057), // เขียวกลาง
-        Color(0xFF0F6D2A), // เขียวเข้มเมทัล
-        Color(0xFFEFFAF1), // ไฮไลต์กลับปลาย
-      ],
-      stops: [0.0, 0.28, 0.55, 0.82, 1.0],
-    );
-
-    // สไตล์ตัวอักษร: ใช้ italic + serif fallback ให้ฟีลคล้ายฟอนต์ในภาพ
-    TextStyle base(double strokeWidth, {bool stroke = false}) {
-      final p = Paint()
-        ..isAntiAlias = true
-        ..style = stroke ? PaintingStyle.stroke : PaintingStyle.fill
-        ..strokeWidth = strokeWidth
-        ..color = stroke ? Colors.white.withOpacity(0.95) : Colors.white;
-
-      return TextStyle(
-        fontSize: size,
-        fontStyle: FontStyle.italic,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.8,
-        height: 1.0,
-        fontFamilyFallback: const ['Times New Roman', 'Georgia', 'serif'],
-        foreground: p,
-      );
-    }
-
-    const text = 'KUCOM';
-
-    return Transform(
-      // เอียงเล็กน้อยให้ใกล้เคียงตัวอย่าง
-      transform: Matrix4.skewX(-0.12),
-      alignment: Alignment.centerRight,
-      child: Stack(
-        alignment: Alignment.centerRight,
-        children: [
-          // เงาเบา ๆ ใต้ตัวอักษรให้ดูนูน
-          Positioned(
-            top: 1.1,
-            child: Text(
-              text,
-              style: base(0).copyWith(
-                color: Colors.black.withOpacity(0.18),
-                foreground: null,
-              ),
-            ),
-          ),
-
-          // เส้นขอบขาวบาง ๆ ตัดกับพื้นหลัง
-          Text(text, style: base(1.6, stroke: true)),
-
-          // เติมลำตัวด้วยกราเดียนต์เขียวเมทัลลิก
-          ShaderMask(
-            shaderCallback: (rect) => metallicGreen.createShader(rect),
-            child: Text(
-              text,
-              textAlign: TextAlign.right,
-              style: base(0, stroke: false).copyWith(
-                shadows: [
-                  Shadow(
-                    color: Colors.black.withOpacity(0.25),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1.2),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // ไฮไลต์เส้นแววบาง ๆ ให้ความรู้สึกโลหะ
-          IgnorePointer(
-            child: ShaderMask(
-              blendMode: BlendMode.srcATop,
-              shaderCallback: (rect) => const LinearGradient(
-                begin: Alignment(-0.8, -1.0),
-                end: Alignment(0.9, 1.0),
-                colors: [Colors.white, Colors.transparent],
-                stops: [0.0, 1.0],
-              ).createShader(rect),
-              child: Text(
-                text,
-                style: base(0).copyWith(
-                  color: Colors.white.withOpacity(0.16),
-                  foreground: null,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+    return Image.asset(
+      'assets/images/ourlogo.png',
+      height: size,
+      fit: BoxFit.contain,
     );
   }
 }

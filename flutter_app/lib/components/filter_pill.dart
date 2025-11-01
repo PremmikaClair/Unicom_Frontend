@@ -32,12 +32,10 @@ class FilterPill extends StatelessWidget {
           duration: const Duration(milliseconds: 150),
           padding: padding,
           decoration: BoxDecoration(
-            color: selected ? AppColors.sage : AppColors.chipGrey, 
+            // Background: white as requested
+            color: Colors.white,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected ? AppColors.deepGreen : Colors.transparent,
-              width: 1.2,
-            ),
+            // Border: deep green in all states
             boxShadow: selected
                 ? [
                     BoxShadow(
@@ -55,7 +53,7 @@ class FilterPill extends StatelessWidget {
                 Icon(
                   leading,
                   size: 16,
-                  color: selected ? AppColors.deepGreen : Colors.black45,
+                  color: Colors.black87,
                 ),
                 const SizedBox(width: 6),
               ],
@@ -63,7 +61,8 @@ class FilterPill extends StatelessWidget {
                 label,
                 style: textStyle?.copyWith(
                   fontWeight: FontWeight.w500,
-                  color: selected ? AppColors.deepGreen : Colors.black54,
+                  // Text: black
+                  color: Colors.black87,
                 ),
               ),
             ],

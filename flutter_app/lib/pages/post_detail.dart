@@ -436,8 +436,10 @@ class _PostPageState extends State<PostPage> {
             ),
 
             // --- Input bar ---
+            // ยกแท่งเขียนคอมเมนต์ให้พ้น Bottom Dock ของ AppShell โดยเผื่อระยะด้านล่างเพิ่ม
             Container(
-              padding: EdgeInsets.fromLTRB(12, 8, 12, 8 + bottomInset),
+              margin: const EdgeInsets.only(bottom: 10), // เว้นที่สำหรับ Bottom Dock (~72px)
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
               decoration: const BoxDecoration(
                 color: Colors.white,
                 border: Border(top: BorderSide(color: Colors.black12)),

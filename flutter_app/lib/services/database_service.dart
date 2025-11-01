@@ -1034,6 +1034,11 @@ class DatabaseService {
           ? (e['event'] as Map).cast<String, dynamic>()
           : null;
       final ev = evMaybe ?? e.cast<String, dynamic>();
+      // Filter by status: show only active events (skip pending/rejected/etc.)
+      final rawStatus = (ev['status'] ?? ev['Status'] ?? ev['event_status'])?.toString().toLowerCase();
+      if (rawStatus != null && rawStatus.isNotEmpty && rawStatus != 'active') {
+        continue;
+      }
       final schedules = ((evMaybe != null ? e['schedules'] : ev['schedules']) as List?)
               ?.cast<Map<String, dynamic>>() ??
           const [];
@@ -1359,9 +1364,9 @@ class DatabaseService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
-  // PATCH /qa/:qaId/answer { answerText }
+  // PATCH /event/qa/:qaId/answer { answerText }
   Future<Map<String, dynamic>> answerEventQaFiber(String qaId, String answerText) async {
-    final uri = _buildUri('/qa/${Uri.encodeComponent(qaId)}/answer', {});
+    final uri = _buildUri('/event/qa/${Uri.encodeComponent(qaId)}/answer', {});
     final res = await _client
         .patch(
           uri,

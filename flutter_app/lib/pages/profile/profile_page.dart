@@ -14,7 +14,9 @@ import '../../services/database_service.dart';
 
 import '../../models/user.dart';
 import '../../models/post.dart' as models;
-import '../../components/post_card.dart';
+import '../../components/post_card_profile.dart';
+// Bring in avatar cache symbol without importing another PostCard
+import '../../components/post_card.dart' show PostCardAvatarCache;
 import 'dart:io';
 
 import 'package:flutter_app/pages/profile/allergies.dart';
@@ -1286,6 +1288,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         SnackBar(content: Text('Hashtag: #$tag')),
                       );
                     },
+                    onDeleted: _isMine ? _refreshPostsAfterDelete : null,
                   ),
                 );
               },

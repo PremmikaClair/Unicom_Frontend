@@ -48,6 +48,13 @@ class _AddPostPageState extends State<AddPostPage> {
       }
     }
     walk(tree, 1);
+    // Default selection: if user has memberships, default to the first membership
+    // so we always have a valid postedAs for backend requirements.
+    if (mems.isNotEmpty) {
+      _selectedMembershipId ??= (mems.first['_id'] ?? '').toString();
+    } else {
+      _selectedMembershipId = null; // no memberships
+    }
     return _AddPostData(me, mems, out);
   }
 
@@ -70,10 +77,7 @@ class _AddPostPageState extends State<AddPostPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a message')));
       return;
     }
-    if (_access == 'org' && (_selectedOrgPath == null || _selectedOrgPath!.isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select an organization')));
-      return;
-    }
+    // When restricting to org, org selection is optional; fallback to postedAs org.
 
     setState(() => _posting = true);
     try {
@@ -82,29 +86,39 @@ class _AddPostPageState extends State<AddPostPage> {
       final username = _usernameFromEmail(data.me);
 
       Map<String, dynamic>? postedAs;
+      // Backend requires postAs.org_path and postAs.position_key.
+      // If user chose 'self' or nothing, fallback to first active membership.
+      Map<String, dynamic> _postedAsFrom(Map<String, dynamic> m) => {
+            'org_path': (m['org_path'] ?? '').toString(),
+            'position_key': (m['position_key'] ?? '').toString(),
+          };
       if (_selectedMembershipId != null && _selectedMembershipId != 'self') {
         final m = data.memberships.firstWhere(
           (e) => (e['_id'] ?? '').toString() == _selectedMembershipId,
           orElse: () => const <String, dynamic>{},
         );
-        if (m.isNotEmpty) {
-          postedAs = {
-            'org_path': (m['org_path'] ?? '').toString(),
-            'position_key': (m['position_key'] ?? '').toString(),
-          };
+        if (m.isNotEmpty) postedAs = _postedAsFrom(m);
+      }
+      postedAs ??= (data.memberships.isNotEmpty) ? _postedAsFrom(data.memberships.first) : null;
+      if (postedAs == null) {
+        // No membership to post as -> cannot proceed.
+        if (mounted) {
+          setState(() => _posting = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You have no role to post as')));
         }
+        return;
       }
 
       Map<String, dynamic>? visibility;
+      // Align with backend DTO: access=public|private, audience as list of org_path strings
       if (_access == 'public') {
         visibility = {'access': 'public'};
       } else {
-        visibility = {
-          'access': 'org',
-          'audience': [
-            {'org_path': _selectedOrgPath, 'scope': _orgScope},
-          ],
-        };
+        // For posts, backend expects audience to be org_path strings; scope is ignored here.
+        final path = (_selectedOrgPath != null && _selectedOrgPath!.isNotEmpty)
+            ? _selectedOrgPath!
+            : (postedAs['org_path'] as String? ?? '');
+        visibility = {'access': 'private', 'audience': path.isNotEmpty ? [path] : <String>[]};
       }
 
       await _db.createPostFiber(
@@ -114,7 +128,10 @@ class _AddPostPageState extends State<AddPostPage> {
         message: message,
         postedAs: postedAs,
         visibility: visibility,
-        orgOfContent: _selectedOrgPath,
+        // Default org_of_content to postedAs org if none selected
+        orgOfContent: (_selectedOrgPath != null && _selectedOrgPath!.isNotEmpty)
+            ? _selectedOrgPath
+            : (postedAs['org_path'] as String?),
         status: 'active',
       );
 

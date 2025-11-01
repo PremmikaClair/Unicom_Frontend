@@ -1,4 +1,4 @@
-// lib/pages/event/register_event_page.dart
+﻿// lib/pages/event/register_event_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:characters/characters.dart';
@@ -231,71 +231,6 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
       return '"' + s.replaceAll('"', '""') + '"';
     }
     return s;
-  }
-
-  // ===== Answers Sheet =====
-  void _showAnswers(_Participant r) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        final answers = r.answers;
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.75,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          builder: (_, controller) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Expanded(
-                      child: Text('คำตอบฟอร์มของ\n${r.fullName}',
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w700)),
-                    ),
-                    IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close))
-                  ]),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: answers.isEmpty
-                        ? const Center(child: Text('ไม่มีคำตอบฟอร์ม'))
-                        : ListView.separated(
-                            controller: controller,
-                            itemCount: answers.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1),
-                            itemBuilder: (_, i) {
-                              final k = answers.keys.elementAt(i);
-                              final v = answers[k];
-                              return ListTile(
-                                title: Text(k),
-                                subtitle: Text(_formatAnswer(v)),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  String _formatAnswer(dynamic v) {
-    if (v == null) return '-';
-    if (v is List) return v.join(', ');
-    return '$v';
   }
 
   // ===== BUILD (คงดีไซน์เดิม) =====
@@ -571,7 +506,7 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
                 onSort: (i, asc) =>
                     setState(() => _sort(columnIndex: i, ascending: asc)),
               ),
-              const DataColumn(label: Text('คำตอบฟอร์ม')),
+              // (ลบคอลัมน์ "คำตอบฟอร์ม")
             ],
             rows: List<DataRow>.generate(_view.length, (i) {
               final r = _view[i];
@@ -585,11 +520,7 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
                 )),
                 DataCell(Text(r.email ?? '-')),
                 DataCell(Text(_formatDateTime(r.registeredAt))),
-                DataCell(TextButton.icon(
-                  onPressed: () => _showAnswers(r),
-                  icon: const Icon(Icons.description_outlined, size: 18),
-                  label: const Text('ดูคำตอบ'),
-                )),
+                // (ลบเซลล์ปุ่มดูคำตอบ)
               ]);
             }),
           ),
@@ -625,12 +556,7 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
               _NumberDot(n: i + 1),
               const SizedBox(width: 10),
               Expanded(child: _NameCell(r: r)),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => _showAnswers(r),
-                icon: const Icon(Icons.description_outlined),
-                tooltip: 'ดูคำตอบ',
-              ),
+              // (ลบปุ่มดูคำตอบ)
             ],
           ),
         );

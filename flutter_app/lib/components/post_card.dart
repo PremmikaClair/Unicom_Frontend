@@ -541,7 +541,25 @@ class PostCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         if (post.authorRoles.isNotEmpty) ...[
                           const SizedBox(height: 2),
-                          Text('Post as: ${post.authorRoles.first}', style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                          Builder(
+                            builder: (_) {
+                              String roleText = '';
+                              if (post.authorRoles.isNotEmpty) {
+                                if (post.authorRoles.length > 1) {
+                                  roleText = post.authorRoles.join(' / ');
+                                } else {
+                                  final s = post.authorRoles.first;
+                                  // ถ้าข้อมูลเดิมคั่นด้วยลูกน้ำ ให้แสดงเป็นสแลชแทน
+                                  final parts = s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+                                  roleText = parts.length > 1 ? parts.join(' / ') : s;
+                                }
+                              }
+                              return Text(
+                                roleText.isNotEmpty ? 'Post as: $roleText' : 'Post as',
+                                style: const TextStyle(fontSize: 11, color: Colors.black54),
+                              );
+                            },
+                          ),
                         ],
                         const SizedBox(height: 6),
                         if (post.category.isNotEmpty)

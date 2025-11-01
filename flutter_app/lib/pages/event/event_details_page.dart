@@ -412,12 +412,12 @@ class _EventDetailPageState extends State<EventDetailPage> {
                   MaterialPageRoute(
                     builder: (_) => QaPage(
                       title: 'Q&A • ${e.title}',
-                      organizerName: (e.organizer == null || e.organizer!.trim().isEmpty)
-                          ? 'Organizer'
-                          : e.organizer!.trim(),
+                      organizerName: (e.organizer != null && e.organizer!.trim().isNotEmpty)
+                          ? e.organizer!.trim()
+                          : 'Organizer',
                       dataSource: EventQaApiDataSource(
                         eventId: widget.event.id,
-                        organizerName: (e.organizer == null || e.organizer!.trim().isNotEmpty)
+                        organizerName: (e.organizer != null && e.organizer!.trim().isNotEmpty)
                             ? e.organizer!.trim()
                             : 'Organizer',
                       ),

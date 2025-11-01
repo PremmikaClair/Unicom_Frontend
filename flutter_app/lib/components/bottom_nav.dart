@@ -52,7 +52,7 @@ class BottomDockNav extends StatelessWidget {
     this.barShadowColor = const Color(0x1A000000),
     this.activeColor = Colors.black87,
     this.inactiveColor = Colors.black54,
-    this.centerColor = const Color(0xFF9DAE7A),
+    this.centerColor = const Color.fromARGB(255, 30, 63, 48),
 
     this.leftCount = 2,
     this.centerGap = 44,

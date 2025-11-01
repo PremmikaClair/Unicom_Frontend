@@ -655,20 +655,21 @@ class PostCard extends StatelessWidget {
       child: Stack(
         children: [
           card,
-          Positioned(
-            right: 6,
-            top: 6,
-            child: Material(
-              color: Colors.transparent,
-              child: IconButton(
-                tooltip: 'Delete post',
-                visualDensity: VisualDensity.compact,
-                onPressed: _confirmAndDelete,
-                iconSize: 18,
-                icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.deepGreen),
+          if (onDeleted != null)
+            Positioned(
+              right: 6,
+              top: 6,
+              child: Material(
+                color: Colors.transparent,
+                child: IconButton(
+                  tooltip: 'Delete post',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _confirmAndDelete,
+                  iconSize: 18,
+                  icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.deepGreen),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
