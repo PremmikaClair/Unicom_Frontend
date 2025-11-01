@@ -1,11 +1,12 @@
 // lib/pages/event/event_form_question.dart
 import 'package:flutter/material.dart';
 import '../../services/database_service.dart';
+import '../../components/app_colors.dart';
 
 /// ===== THEME (Green / White) =====
 const _bg = Colors.white;
-const _accent = Color(0xFF7FAA3B);      // เขียวหลัก
-const _accentDark = Color(0xFF1F3A2E);  // เขียวเข้ม
+const _accent = AppColors.sage;         // ใช้สีเขียวหลักจาก AppColors
+const _accentDark = AppColors.deepGreen;  // เขียวเข้มตามชุดสีแอป
 const _chip = Color(0xFFEFF4E5);        // เส้น/ฉากจางมาก
 const _fieldBg = Color(0xFFF7F9F5);
 
