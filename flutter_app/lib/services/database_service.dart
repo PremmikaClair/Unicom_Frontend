@@ -732,6 +732,7 @@ class DatabaseService {
     Uint8List? imageBytes,
     String? imageFilename,
     // Optional profile fields
+    String? telephone,
     String? firstName,
     String? lastName,
     String? thaiPrefix,
@@ -750,6 +751,14 @@ class DatabaseService {
     void put(String k, String? v) {
       if (v != null && v.trim().isNotEmpty) req.fields[k] = v.trim();
     }
+    // Commonly accepted keys across backends (defensive synonyms)
+    put('Telephone', telephone);
+    put('telephone', telephone);
+    put('Phone', telephone);
+    put('phone', telephone);
+    put('Mobile', telephone);
+    put('mobile', telephone);
+    put('tel', telephone);
     put('FirstName', firstName);
     put('LastName', lastName);
     put('ThaiPrefix', thaiPrefix);
@@ -769,7 +778,7 @@ class DatabaseService {
 
     final streamed = await req.send().timeout(const Duration(seconds: 20));
     final res = await http.Response.fromStream(streamed);
-    if (res.statusCode != 200 && res.statusCode != 201) {
+    if (res.statusCode < 200 || res.statusCode >= 300) {
       throw HttpException('POST $uri -> ${res.statusCode}: ${res.body}');
     }
     final body = res.body.trim();

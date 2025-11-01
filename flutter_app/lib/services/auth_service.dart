@@ -97,6 +97,11 @@ class AuthService {
       'email': email,
       'password': p.password,
       if (p.organizePath != null && p.organizePath!.isNotEmpty) 'organize_path': p.organizePath,
+      if (p.telephone != null && p.telephone!.isNotEmpty) 'telephone': p.telephone,
+      if (p.allergy != null && p.allergy!.isNotEmpty) 'allergy': p.allergy,
+      if (p.disease != null && p.disease!.isNotEmpty) 'disease': p.disease,
+      // some backends might expect plurals or alt keys
+      if (p.allergy != null && p.allergy!.isNotEmpty) 'allergies': p.allergy,
 
       // TitleCase keys (remote backend examples)
       'FirstName': p.firstname.trim(),
@@ -110,6 +115,9 @@ class AuthService {
       'Password': p.password,
       if (p.organizePath != null && p.organizePath!.isNotEmpty) 'OrgPath': p.organizePath,
       if (p.organizePath != null && p.organizePath!.isNotEmpty) 'OrganizePath': p.organizePath,
+      if (p.telephone != null && p.telephone!.isNotEmpty) 'Telephone': p.telephone,
+      if (p.allergy != null && p.allergy!.isNotEmpty) 'Allergy': p.allergy,
+      if (p.disease != null && p.disease!.isNotEmpty) 'Disease': p.disease,
     };
     final body = jsonEncode(map);
 
@@ -203,6 +211,9 @@ class RegisterPayload {
     required this.email,
     required this.password,
     this.organizePath,
+    this.telephone,
+    this.allergy,
+    this.disease,
   });
 
   final String firstname;
@@ -215,4 +226,7 @@ class RegisterPayload {
   final String email;
   final String password;
   final String? organizePath;
+  final String? telephone; // phone number
+  final String? allergy;   // food allergies
+  final String? disease;   // health allergies / disease
 }

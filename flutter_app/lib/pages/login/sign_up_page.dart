@@ -16,6 +16,10 @@ class _SignUpPageState extends State<SignUpPage> {
   final _password = TextEditingController();
   final _confirmPassword = TextEditingController();
   final _studentId = TextEditingController();
+  final _advisor = TextEditingController();
+  final _phone = TextEditingController();
+  final _foodAllergy = TextEditingController();
+  final _healthAllergy = TextEditingController();
   final _confirmFocus = FocusNode();
 
   bool _busy = false;
@@ -36,6 +40,10 @@ class _SignUpPageState extends State<SignUpPage> {
     _password.addListener(_onChanged);
     _confirmPassword.addListener(_onChanged);
     _studentId.addListener(_onChanged);
+    _advisor.addListener(_onChanged);
+    _phone.addListener(_onChanged);
+    _foodAllergy.addListener(_onChanged);
+    _healthAllergy.addListener(_onChanged);
     _confirmFocus.addListener(() {
       if (!_confirmFocus.hasFocus) {
         if (mounted) setState(() => _confirmBlurred = true);
@@ -55,6 +63,10 @@ class _SignUpPageState extends State<SignUpPage> {
     _password.dispose();
     _confirmPassword.dispose();
     _studentId.dispose();
+    _advisor.dispose();
+    _phone.dispose();
+    _foodAllergy.dispose();
+    _healthAllergy.dispose();
     _confirmFocus.dispose();
     super.dispose();
   }
@@ -70,7 +82,6 @@ class _SignUpPageState extends State<SignUpPage> {
     if (fn.isEmpty || ln.isEmpty || email.isEmpty || pw.isEmpty ||
         _thaiPrefixValue == null || _thaiPrefixValue!.isEmpty ||
         _gender == null || _gender!.isEmpty ||
-        _typePerson == null || _typePerson!.isEmpty ||
         _studentId.text.trim().isEmpty) {
       setState(() => _error = 'Please fill in all required fields');
       return;
@@ -95,6 +106,10 @@ class _SignUpPageState extends State<SignUpPage> {
         gender: _gender,
         typePerson: _typePerson,
         studentId: _studentId.text.trim(),
+        advisorId: _advisor.text.trim(),
+        telephone: _phone.text.trim(),
+        allergy: _foodAllergy.text.trim(),
+        disease: _healthAllergy.text.trim(),
       );
       await AuthService.I.register(payload);
 
@@ -131,7 +146,6 @@ class _SignUpPageState extends State<SignUpPage> {
         _confirmPassword.text.isNotEmpty &&
         (_thaiPrefixValue != null && _thaiPrefixValue!.isNotEmpty) &&
         (_gender != null && _gender!.isNotEmpty) &&
-        (_typePerson != null && _typePerson!.isNotEmpty) &&
         _studentId.text.isNotEmpty;
     final canSubmit = requiredFilled && emailOk && confirmMatches && !_busy;
 
@@ -186,6 +200,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              // 1) Thai prefix
                               DropdownButtonFormField<String>(
                                 value: thaiPrefixes.contains(_thaiPrefixValue) ? _thaiPrefixValue : null,
                                 items: const [
@@ -206,6 +221,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                 isExpanded: true,
                               ),
                               const SizedBox(height: 12),
+                              // 2) First name
                               TextField(
                                 controller: _firstName,
                                 textCapitalization: TextCapitalization.words,
@@ -218,6 +234,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ),
                               ),
                               const SizedBox(height: 12),
+                              // 3) Last name
                               TextField(
                                 controller: _lastName,
                                 textCapitalization: TextCapitalization.words,
@@ -230,6 +247,63 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ),
                               ),
                               const SizedBox(height: 12),
+                              // 4) Email
+                              TextField(
+                                controller: _email,
+                                keyboardType: TextInputType.emailAddress,
+                                autofillHints: const [AutofillHints.email],
+                                decoration: InputDecoration(
+                                  labelText: 'Email (@ku.th)',
+                                  prefixIcon: const Icon(Icons.alternate_email_rounded),
+                                  filled: true,
+                                  fillColor: const Color(0xFFF0FDF4),
+                                  border: const OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+                                  errorText: _email.text.isNotEmpty && !emailOk
+                                      ? 'Use your @ku.th email'
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // 5) Student ID
+                              TextField(
+                                controller: _studentId,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'Student ID',
+                                  prefixIcon: Icon(Icons.perm_identity_outlined),
+                                  filled: true,
+                                  fillColor: Color(0xFFF0FDF4),
+                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // 5.1) Adviser (email or ID)
+                              TextField(
+                                controller: _advisor,
+                                keyboardType: TextInputType.emailAddress,
+                                decoration: const InputDecoration(
+                                  labelText: 'Adviser (email or ID)',
+                                  prefixIcon: Icon(Icons.school_outlined),
+                                  filled: true,
+                                  fillColor: Color(0xFFF0FDF4),
+                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // 6) Phone number
+                              TextField(
+                                controller: _phone,
+                                keyboardType: TextInputType.phone,
+                                decoration: const InputDecoration(
+                                  labelText: 'Phone number',
+                                  prefixIcon: Icon(Icons.phone_outlined),
+                                  filled: true,
+                                  fillColor: Color(0xFFF0FDF4),
+                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // 7) Gender
                               DropdownButtonFormField<String>(
                                 value: _gender,
                                 items: const [
@@ -247,6 +321,33 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ),
                               ),
                               const SizedBox(height: 12),
+                              // 8) Food allergies
+                              TextField(
+                                controller: _foodAllergy,
+                                decoration: const InputDecoration(
+                                  labelText: 'Food allergies',
+                                  hintText: 'e.g., peanut, shrimp',
+                                  prefixIcon: Icon(Icons.restaurant_outlined),
+                                  filled: true,
+                                  fillColor: Color(0xFFF0FDF4),
+                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // 9) Health allergies
+                              TextField(
+                                controller: _healthAllergy,
+                                decoration: const InputDecoration(
+                                  labelText: 'Health conditions / allergies',
+                                  hintText: 'e.g., asthma',
+                                  prefixIcon: Icon(Icons.health_and_safety_outlined),
+                                  filled: true,
+                                  fillColor: Color(0xFFF0FDF4),
+                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // Optional: Type (kept but not required)
                               DropdownButtonFormField<String>(
                                 value: _typePerson,
                                 items: const [
@@ -256,39 +357,11 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ],
                                 onChanged: (v) => setState(() => _typePerson = v),
                                 decoration: const InputDecoration(
-                                  labelText: 'Type',
+                                  labelText: 'Type (optional)',
                                   prefixIcon: Icon(Icons.school_outlined),
                                   filled: true,
                                   fillColor: Color(0xFFF0FDF4),
                                   border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _studentId,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText: 'Student ID',
-                                  prefixIcon: Icon(Icons.perm_identity_outlined),
-                                  filled: true,
-                                  fillColor: Color(0xFFF0FDF4),
-                                  border: OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _email,
-                                keyboardType: TextInputType.emailAddress,
-                                autofillHints: const [AutofillHints.email],
-                                decoration: InputDecoration(
-                                  labelText: 'Email (@ku.th)',
-                                  prefixIcon: const Icon(Icons.alternate_email_rounded),
-                                  filled: true,
-                                  fillColor: const Color(0xFFF0FDF4),
-                                  border: const OutlineInputBorder(borderSide: BorderSide.none, borderRadius: BorderRadius.all(Radius.circular(14))),
-                                  errorText: _email.text.isNotEmpty && !emailOk
-                                      ? 'Use your @ku.th email'
-                                      : null,
                                 ),
                               ),
                               const SizedBox(height: 12),
