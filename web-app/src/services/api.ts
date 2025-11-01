@@ -658,8 +658,8 @@ function mapEvent(row: any): EventDoc {
 
 export async function listEvents(): Promise<EventDoc[]> {
   const rows = await apiFetch<any>(`/event`).catch(() => [] as any);
-  const list = Array.isArray(rows) ? rows : (Array.isArray(rows?.data) ? rows.data : []);
-  console.log(rows);
+  const list = Array.isArray(rows) ? rows : (Array.isArray(rows?.data) ? rows.data : []);  
+  // console.log(list);
   return list.map(mapEvent);
 }
 
@@ -681,6 +681,11 @@ export async function createEvent(body: {
 export async function deleteEvent(id: string) {
   console.log(`delete ${encodeURIComponent(id)}`)
   await apiFetch<void>(`/event/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function acceptEvent(id: string) {
+  console.log(`accept ${encodeURIComponent(id)}`)
+  await apiFetch<void>(`/event/activate/${encodeURIComponent(id)}`, { method: "PATCH" });
 }
 
 // -------- Event Management (participants) --------

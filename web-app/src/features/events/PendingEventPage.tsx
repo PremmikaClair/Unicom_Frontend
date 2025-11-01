@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getAbilitiesWhere, listEvents, createEvent, deleteEvent } from "../../services/api";
+import { getAbilitiesWhere, listEvents, createEvent, deleteEvent, acceptEvent } from "../../services/api";
 import type { EventDoc } from "../../types";
 
 type WhereResp = { action: string; orgs: { org_path: string; label?: string }[]; version?: string };
@@ -27,7 +27,7 @@ const PendingEventsPage: React.FC = () => {
       ]);
       console.log(list)
     //   console.log(list[0]['visibility']['access']);
-      const filterlist = list.filter(item => item.visibility?.access === "pending");
+      const filterlist = list.filter(item => item.status === "pending");
     //   console.log(list);
       setOrgs(perm?.orgs || []);
       setRows(Array.isArray(filterlist) ? filterlist : []);
@@ -73,6 +73,17 @@ const PendingEventsPage: React.FC = () => {
     setRows(prev.filter(r => (r.id || r._id) !== id));
     try { await deleteEvent(id); } catch (e: any) {
       setError(e?.message || "Delete failed");
+      setRows(prev);
+    }
+  }
+  
+  async function handleAccept(id?: string) {
+    if (!id) return;
+    if (!window.confirm("Accept this event?")) return;
+    const prev = rows;
+    setRows(prev.filter(r => (r.id || r._id) !== id));
+    try { await acceptEvent(id); } catch (e: any) {
+      setError(e?.message || "Accept failed");
       setRows(prev);
     }
   }
@@ -203,10 +214,16 @@ const PendingEventsPage: React.FC = () => {
 
                 <div className="mt-3 flex items-center justify-end">
                     <button
+                    className="text-green-700 text-sm px-2 py-1 border rounded border-green-200 cursor-pointer hover:bg-green-50"
+                    onClick={() => handleAccept(id)}
+                    >
+                    Accept
+                    </button>
+                    <button
                     className="text-red-700 text-sm px-2 py-1 border rounded border-red-200 cursor-pointer hover:bg-red-50"
                     onClick={() => handleDelete(id)}
                     >
-                    Delete
+                    Reject
                     </button>
                 </div>
             </div>
