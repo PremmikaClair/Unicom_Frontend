@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../components/app_colors.dart';
@@ -6,6 +5,7 @@ import '../../components/post_card.dart';
 import '../../models/post.dart';
 import '../post_detail.dart';
 import '../../services/database_service.dart';
+import '../../controllers/like_controller.dart';
 
 /// Hashtag feed page. Push with:
 /// Navigator.pushNamed(HashtagFeedPage.routeName, arguments: tag)
@@ -21,6 +21,7 @@ class HashtagFeedPage extends StatefulWidget {
 
 class _HashtagFeedPageState extends State<HashtagFeedPage> {
   late final DatabaseService _db = DatabaseService();
+  late final FeedLikeController _likes;
 
   // Paging
   bool _loading = true;
@@ -28,17 +29,16 @@ class _HashtagFeedPageState extends State<HashtagFeedPage> {
   String? _nextCursor;
   List<Post> _posts = [];
 
-  // Like state
-  final Set<String> _likedIds = {};
-  final Map<String, int> _likeCounts = {};
-  final Map<String, int> _commentCounts = {};
-  final Set<String> _liking = {};
-
   final _scroll = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _likes = FeedLikeController(
+      db: _db,
+      setState: setState,
+      showSnack: _snack,
+    );
     _loadFirstPage();
     _scroll.addListener(_maybeLoadMore);
   }
@@ -58,12 +58,8 @@ class _HashtagFeedPageState extends State<HashtagFeedPage> {
         _posts = page.items;
         _nextCursor = page.nextCursor; // may be null if server doesn’t paginate
         _loading = false;
-        for (final p in _posts) {
-          _likeCounts[p.id] = p.likeCount;
-          _commentCounts[p.id] = p.comment;
-          if (p.isLiked) _likedIds.add(p.id);
-        }
       });
+      _likes.seedFromPosts(page.items);
     } catch (_) {
       setState(() {
         _posts = [];
@@ -83,12 +79,8 @@ class _HashtagFeedPageState extends State<HashtagFeedPage> {
         _posts.addAll(page.items);
         _nextCursor = page.nextCursor;
         _fetchingMore = false;
-        for (final p in page.items) {
-          _likeCounts[p.id] = p.likeCount;
-          _commentCounts[p.id] = p.comment;
-          if (p.isLiked) _likedIds.add(p.id);
-        }
       });
+      _likes.seedFromPosts(page.items);
     } catch (_) {
       setState(() => _fetchingMore = false);
       _snack('Failed to load more');
@@ -102,47 +94,45 @@ class _HashtagFeedPageState extends State<HashtagFeedPage> {
     }
   }
 
-  void _toggleLike(Post p) async {
-    if (_liking.contains(p.id)) return;
-    _liking.add(p.id);
-    final prevLiked = _likedIds.contains(p.id);
-    final prevCount = _likeCounts[p.id] ?? p.likeCount;
-    setState(() {
-      if (prevLiked) {
-        _likedIds.remove(p.id);
-        _likeCounts[p.id] = math.max(0, prevCount - 1);
-      } else {
-        _likedIds.add(p.id);
-        _likeCounts[p.id] = prevCount + 1;
-      }
-    });
-    try {
-      final r = await _db.toggleLike(targetId: p.id, targetType: 'post');
-      setState(() {
-        if (r.liked) {
-          _likedIds.add(p.id);
-        } else {
-          _likedIds.remove(p.id);
-        }
-        _likeCounts[p.id] = r.likeCount;
-      });
-    } catch (_) {
-      setState(() {
-        if (prevLiked) {
-          _likedIds.add(p.id);
-        } else {
-          _likedIds.remove(p.id);
-        }
-        _likeCounts[p.id] = prevCount;
-      });
-      _snack('Failed to update like');
-    } finally {
-      _liking.remove(p.id);
-    }
+  void _toggleLike(Post p) {
+    _likes.toggleLike(p);
   }
 
-  void _openComments(Post p) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => PostPage(post: p)));
+  Future<void> _openComments(Post p) async {
+    final synced = Post(
+      id: p.id,
+      userId: p.userId,
+      profilePic: p.profilePic,
+      username: p.username,
+      category: p.category,
+      message: p.message,
+      likeCount: _likes.likeCountOf(p),
+      comment: _likes.commentCountOf(p),
+      isLiked: _likes.isLiked(p),
+      authorRoles: p.authorRoles,
+      visibilityRoles: p.visibilityRoles,
+      timeStamp: p.timeStamp,
+      picture: p.picture,
+      video: p.video,
+      images: p.images,
+      videos: p.videos,
+    );
+
+    final result = await Navigator.push<Map<String, dynamic>?>(
+      context,
+      MaterialPageRoute(builder: (_) => PostPage(post: synced)),
+    );
+
+    if (!mounted || result == null) return;
+    final postIdRaw = result['postId'];
+    if (postIdRaw is! String || postIdRaw.isEmpty) return;
+    if (postIdRaw != p.id) return;
+    _likes.applyFromDetail(
+      postId: postIdRaw,
+      liked: result['liked'] as bool?,
+      likeCount: result['likeCount'] as int?,
+      commentCount: result['commentCount'] as int?,
+    );
   }
 
   void _snack(String msg) {
@@ -209,9 +199,10 @@ class _HashtagFeedPageState extends State<HashtagFeedPage> {
                     return const SizedBox(height: 16);
                   }
                   final p = _posts[i];
-                  final liked = _likedIds.contains(p.id);
-                  final likes = _likeCounts[p.id] ?? p.likeCount;
-                  final comments = _commentCounts[p.id] ?? p.comment;
+                  final liked = _likes.isLiked(p);
+                  final likes = _likes.likeCountOf(p);
+                  final comments = _likes.commentCountOf(p);
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _likes.ensureLikeState(p));
                   return PostCard(
                     post: p,
                     isLiked: liked,

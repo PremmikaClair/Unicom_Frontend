@@ -10,6 +10,7 @@ import '../post_detail.dart';
 import '../profile/profile_page.dart';
 import 'hashtag_feed_page.dart';
 import 'people_search_page.dart';
+import '../../controllers/like_controller.dart';
 
 class _MatchedUser {
   final String id;
@@ -64,12 +65,9 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
   late final TextEditingController _ctrl;
   final ScrollController _scrollCtrl = ScrollController();
   late final DatabaseService _db = DatabaseService();
+  late final FeedLikeController _likes;
 
   final List<models.Post> _posts = <models.Post>[];
-  final Set<String> _likedIds = <String>{};
-  final Set<String> _liking = <String>{};
-  final Map<String, int> _likeCounts = <String, int>{};
-  final Map<String, int> _commentCounts = <String, int>{};
 
   bool _loading = false;
   bool _fetchingMore = false;
@@ -87,6 +85,11 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.initialQuery);
+    _likes = FeedLikeController(
+      db: _db,
+      setState: setState,
+      showSnack: _showSnack,
+    );
     _currentQuery = widget.initialQuery.trim();
     _scrollCtrl.addListener(_maybeLoadMore);
     if (_currentQuery.isNotEmpty) {
@@ -120,9 +123,6 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
         _error = null;
         _posts.clear();
         _nextCursor = null;
-        _likedIds.clear();
-        _likeCounts.clear();
-        _commentCounts.clear();
         _userMatches.clear();
         _userCursor = null;
         _userLoading = false;
@@ -137,9 +137,6 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
         _error = null;
         _posts.clear();
         _nextCursor = null;
-        _likedIds.clear();
-        _likeCounts.clear();
-        _commentCounts.clear();
         _userMatches.clear();
         _userCursor = null;
         _userLoading = true;
@@ -175,14 +172,6 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
         if (!mounted || _currentQuery != q) return;
         final filtered = page.items.where((p) => _matchesQuery(p, lower)).toList();
         for (final p in filtered) {
-          _likeCounts[p.id] = p.likeCount;
-          _commentCounts[p.id] = p.comment;
-          if (p.isLiked) {
-            _likedIds.add(p.id);
-          } else {
-            _likedIds.remove(p.id);
-          }
-
           if (existingIds.contains(p.id)) {
             final idx = updated.indexWhere((e) => e.id == p.id);
             if (idx >= 0) updated[idx] = p;
@@ -219,6 +208,7 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
         _fetchingMore = false;
         _error = null;
       });
+      _likes.seedFromPosts(updated);
       if (!mounted || _currentQuery != q) return;
       if (reset) {
         await _searchUsers(query: q, reset: true);
@@ -235,9 +225,7 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
           _fetchingMore = false;
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to search posts')),
-      );
+      _showSnack('Unable to search posts');
     }
   }
 
@@ -435,54 +423,41 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
   }
 
   void _toggleLike(models.Post post) {
-    final id = post.id;
-    if (_liking.contains(id)) return;
-
-    final wasLiked = _likedIds.contains(id);
-    final prevCount = _likeCounts[id] ?? post.likeCount;
-
-    setState(() {
-      if (wasLiked) {
-        _likedIds.remove(id);
-        _likeCounts[id] = prevCount > 0 ? prevCount - 1 : 0;
-      } else {
-        _likedIds.add(id);
-        _likeCounts[id] = prevCount + 1;
-      }
-    });
-
-    _liking.add(id);
-    _db.toggleLike(targetId: id, targetType: 'post').then((res) {
-      if (!mounted) return;
-      setState(() {
-        if (res.liked) {
-          _likedIds.add(id);
-        } else {
-          _likedIds.remove(id);
-        }
-        _likeCounts[id] = res.likeCount;
-      });
-    }).catchError((_) {
-      if (!mounted) return;
-      setState(() {
-        if (wasLiked) {
-          _likedIds.add(id);
-        } else {
-          _likedIds.remove(id);
-        }
-        _likeCounts[id] = prevCount;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update like')),
-      );
-    }).whenComplete(() {
-      _liking.remove(id);
-    });
+    _likes.toggleLike(post);
   }
 
-  void _openPost(models.Post post) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PostPage(post: post)),
+  Future<void> _openPost(models.Post post) async {
+    final synced = models.Post(
+      id: post.id,
+      userId: post.userId,
+      profilePic: post.profilePic,
+      username: post.username,
+      category: post.category,
+      message: post.message,
+      likeCount: _likes.likeCountOf(post),
+      comment: _likes.commentCountOf(post),
+      isLiked: _likes.isLiked(post),
+      authorRoles: post.authorRoles,
+      visibilityRoles: post.visibilityRoles,
+      timeStamp: post.timeStamp,
+      picture: post.picture,
+      video: post.video,
+      images: post.images,
+      videos: post.videos,
+    );
+
+    final result = await Navigator.of(context).push<Map<String, dynamic>?>(
+      MaterialPageRoute(builder: (_) => PostPage(post: synced)),
+    );
+
+    if (!mounted || result == null) return;
+    if ((result['postId'] as String?) != post.id) return;
+
+    _likes.applyFromDetail(
+      postId: post.id,
+      liked: result['liked'] as bool?,
+      likeCount: result['likeCount'] as int?,
+      commentCount: result['commentCount'] as int?,
     );
   }
 
@@ -506,8 +481,14 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
     );
   }
 
-  int _likeCountOf(models.Post post) => _likeCounts[post.id] ?? post.likeCount;
-  int _commentCountOf(models.Post post) => _commentCounts[post.id] ?? post.comment;
+  int _likeCountOf(models.Post post) => _likes.likeCountOf(post);
+  int _commentCountOf(models.Post post) => _likes.commentCountOf(post);
+
+  void _showSnack(String msg) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.hideCurrentSnackBar();
+    messenger?.showSnackBar(SnackBar(content: Text(msg)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -626,11 +607,15 @@ class _SearchFeedPageState extends State<SearchFeedPage> {
             return const SizedBox.shrink();
           }
           final post = _posts[postIndex];
+          final liked = _likes.isLiked(post);
+          final likes = _likeCountOf(post);
+          final comments = _commentCountOf(post);
+          WidgetsBinding.instance.addPostFrameCallback((_) => _likes.ensureLikeState(post));
           return PostCard(
             post: post,
-            isLiked: _likedIds.contains(post.id),
-            likeCount: _likeCountOf(post),
-            commentCount: _commentCountOf(post),
+            isLiked: liked,
+            likeCount: likes,
+            commentCount: comments,
             onToggleLike: () => _toggleLike(post),
             onCommentTap: () => _openPost(post),
             onCardTap: () => _openPost(post),
