@@ -55,8 +55,9 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
   }
 
   Future<void> _load() async {
+    // Fetch participants from backend: only accepted registrations and role=participant
     final rows = await DatabaseService()
-        .getEventParticipantsFiber(widget.eventId, status: _apiStatus);
+        .getEventParticipantsFiber(widget.eventId, status: _apiStatus, role: 'participant');
 
     // map -> model ที่หน้า UI ใช้สะดวก
     _all = <_Participant>[

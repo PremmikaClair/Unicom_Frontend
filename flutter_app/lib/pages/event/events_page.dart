@@ -257,9 +257,15 @@ class _EventsPageState extends State<EventsPage> {
   bool get _canManageEvents => CurrentUser.roles.any((r) => kEventManagerRoles.contains(r));
 
   void _goCreateEvent() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const CreateEventPage()),
-    );
+    // Open CreateEventPage on the root navigator so it is not under AppShell
+    // and refresh list after success
+    Navigator.of(context, rootNavigator: true)
+        .push<bool>(MaterialPageRoute(builder: (_) => const CreateEventPage()))
+        .then((ok) {
+      if (ok == true) {
+        _refresh();
+      }
+    });
   }
 
   void _goCheckIn() {

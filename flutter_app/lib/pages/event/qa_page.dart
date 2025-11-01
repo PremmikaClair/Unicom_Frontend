@@ -1,3 +1,4 @@
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/components/app_colors.dart';
 import '../../services/database_service.dart';
@@ -12,7 +13,6 @@ const _textSecondary = Colors.black54;
 const _accent = Color(0xFF7FAA3B);
 
 /// ========================= MODELS =========================
-/// (ทำเป็น immutable + มี toJson/fromJson เพื่อพร้อมต่อ API)
 class QaAnswer {
   final String id;
   final String author;
@@ -42,10 +42,10 @@ class QaAnswer {
 
   factory QaAnswer.fromJson(Map<String, dynamic> json) {
     return QaAnswer(
-      id: json['id'] as String,
-      author: json['author'] as String,
-      text: json['text'] as String,
-      time: DateTime.parse(json['time'] as String),
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      author: (json['author'] ?? 'Organizer').toString(),
+      text: (json['text'] ?? '').toString(),
+      time: DateTime.tryParse((json['time'] ?? '').toString()) ?? DateTime.now(),
     );
   }
 
@@ -93,15 +93,21 @@ class QaQuestion {
   }
 
   factory QaQuestion.fromJson(Map<String, dynamic> json) {
+    final answers = (json['answers'] as List<dynamic>? ?? const [])
+        .map((e) => QaAnswer.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+
+    final answeredFlag = json['answered'] as bool?;
+    final answered = answeredFlag ?? answers.isNotEmpty;
+
     return QaQuestion(
-      id: json['id'] as String,
-      author: json['author'] as String,
-      text: json['text'] as String,
-      time: DateTime.parse(json['time'] as String),
-      answered: json['answered'] as bool? ?? (json['answers'] != null && (json['answers'] as List).isNotEmpty),
-      answers: (json['answers'] as List<dynamic>? ?? const [])
-          .map((e) => QaAnswer.fromJson(e as Map<String, dynamic>))
-          .toList(growable: false),
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      author: (json['author'] ?? json['user'] ?? 'Anonymous').toString(),
+      text: (json['text'] ?? json['question'] ?? json['questionText'] ?? '').toString(),
+      time: DateTime.tryParse((json['time'] ?? json['createdAt'] ?? json['questionCreatedAt'] ?? '').toString()) ??
+          DateTime.now(),
+      answered: answered,
+      answers: answers,
     );
   }
 
@@ -116,186 +122,93 @@ class QaQuestion {
 }
 
 /// ========================= DATA SOURCE =========================
-/// สร้าง interface สำหรับแหล่งข้อมูล (พร้อมสลับเป็น API ภายหลัง)
 abstract class QaDataSource {
-  Future<List<QaQuestion>> fetchQuestions();                 // GET /questions
-  Future<QaQuestion> postQuestion({required String text});   // POST /questions
-  Future<QaAnswer> postAnswer({required String qid, required String text}); // POST /questions/:id/answers
+  Future<List<QaQuestion>> fetchQuestions(); // GET list
+  Future<QaQuestion> postQuestion({required String text}); // POST question
+  Future<QaAnswer> postAnswer({required String qid, required String text}); // PATCH/POST answer
 }
 
-/// Mock/Fake data source สำหรับช่วงที่ยังไม่มี backend
-class FakeQaDataSource implements QaDataSource {
-  FakeQaDataSource({required this.organizerName}) {
-    // seed mock
-    _db = [
-      QaQuestion(
-        id: 'q1',
-        author: 'นิสิตปี 2',
-        text: 'ลงทะเบียนหน้างานได้ไหมคะ ถ้ายังไม่ได้สมัครล่วงหน้า?',
-        time: DateTime.now().subtract(const Duration(hours: 3)),
-        answered: true,
-        answers: [
-          QaAnswer(
-            id: 'a1',
-            author: organizerName,
-            text:
-                'ได้ค่ะ แต่มีโควต้า จำกัด แนะนำสมัครล่วงหน้าจะชัวร์กว่า และได้รับของที่ระลึกแน่นอนค่ะ',
-            time: DateTime.now().subtract(const Duration(hours: 2, minutes: 45)),
-          ),
-        ],
-      ),
-      QaQuestion(
-        id: 'q2',
-        author: 'Alumni',
-        text: 'สาย UX/UI ควรเตรียมพอร์ตแบบไหนไปพูดคุยกับบริษัทบ้าง?',
-        time: DateTime.now().subtract(const Duration(hours: 1, minutes: 40)),
-        answered: true,
-        answers: [
-          QaAnswer(
-            id: 'a2',
-            author: organizerName,
-            text:
-                'เลือก 2–3 เคสที่เล่า process ชัด ๆ (Problem → Research → Wireframe → Test → Iterate) พร้อมลิงก์ Figma/Prototype ค่ะ',
-            time: DateTime.now().subtract(const Duration(hours: 1, minutes: 10)),
-          ),
-        ],
-      ),
-      QaQuestion(
-        id: 'q3',
-        author: 'นิสิตปี 1',
-        text: 'มีที่จอดรถบริเวณงานไหมครับ?',
-        time: DateTime.now().subtract(const Duration(minutes: 50)),
-        answered: true,
-        answers: [
-          QaAnswer(
-            id: 'a3',
-            author: organizerName,
-            text: 'มีลานจอดหน้าศูนย์กีฬา ~200 คัน แนะนำมารถสาธารณะช่วงเช้า สะดวกกว่าครับ',
-            time: DateTime.now().subtract(const Duration(minutes: 35)),
-          ),
-        ],
-      ),
-      QaQuestion(
-        id: 'q4',
-        author: 'นิสิตปี 3',
-        text: 'ถ้าฝนตกหนัก งานยังจัดตามปกติไหมคะ?',
-        time: DateTime.now().subtract(const Duration(minutes: 25)),
-        answered: false,
-        answers: const [],
-      ),
-    ];
-  }
+/// --- Mock source (สำหรับ dev/offline) ---
+// Mock data source removed — use EventQaApiDataSource only
 
-  final String organizerName;
-  late List<QaQuestion> _db;
 
-  @override
-  Future<List<QaQuestion>> fetchQuestions() async {
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    // จำลองเรียงล่าสุดก่อน
-    final list = [..._db]..sort((a, b) => b.time.compareTo(a.time));
-    return list;
-  }
-
-  @override
-  Future<QaQuestion> postQuestion({required String text}) async {
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    final q = QaQuestion(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      author: 'ฉัน',
-      text: text,
-      time: DateTime.now(),
-      answers: const [],
-      answered: false,
-    );
-    _db = [q, ..._db];
-    return q;
-  }
-
-  @override
-  Future<QaAnswer> postAnswer({required String qid, required String text}) async {
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    final a = QaAnswer(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      author: organizerName,
-      text: text,
-      time: DateTime.now(),
-    );
-    _db = _db.map((q) {
-      if (q.id == qid) {
-        return q.copyWith(answers: [...q.answers, a], answered: true);
-      }
-      return q;
-    }).toList();
-    return a;
-  }
-}
-
-/// Backend-powered data source (partial):
-/// - postQuestion uses POST /event/:eventId/qa
-/// - fetchQuestions falls back to empty (no list endpoint yet)
-/// - postAnswer not implemented (route not wired)
+/// --- Backend source (ใช้งานจริง) ---
 class EventQaApiDataSource implements QaDataSource {
   final String eventId;
   final String organizerName;
   EventQaApiDataSource({required this.eventId, required this.organizerName});
 
-  @override
-  Future<List<QaQuestion>> fetchQuestions() async {
-    final list = await DatabaseService().getEventQaListFiber(eventId);
-    return list.map((m) {
-      final id = (m['id'] ?? m['_id'] ?? '').toString();
-      final txt = (m['questionText'] ?? '').toString();
-      final tsStr = (m['questionCreatedAt'] ?? DateTime.now().toIso8601String()).toString();
-      final ts = DateTime.tryParse(tsStr) ?? DateTime.now();
-      final ansText = m['answerText']?.toString();
-      final answered = ansText != null && ansText.isNotEmpty;
-      final answers = answered
-          ? [QaAnswer(id: 'a_$id', author: organizerName, text: ansText!, time: ts)]
-          : const <QaAnswer>[];
-      return QaQuestion(id: id, author: 'Anonymous', text: txt, time: ts, answered: answered, answers: answers);
-    }).toList(growable: false);
+  bool _isAnswered(Map m) {
+    final s = (m['status'] ?? '').toString().toLowerCase();
+    final hasText = (m['answer_text'] ?? '').toString().isNotEmpty;
+    return s == 'answered' || hasText;
   }
 
-  @override
-  Future<QaQuestion> postQuestion({required String text}) async {
-    final res = await DatabaseService().postEventQuestionFiber(eventId, text);
-    final id = (res['id'] ?? res['_id'] ?? '').toString();
-    final qText = (res['questionText'] ?? text).toString();
-    final tsStr = (res['questionCreatedAt'] ?? DateTime.now().toIso8601String()).toString();
-    final ts = DateTime.tryParse(tsStr) ?? DateTime.now();
-    final ans = res['answerText']?.toString();
-    final answered = ans != null && ans.isNotEmpty;
+  DateTime _parseTime(dynamic v, {DateTime? fallback}) {
+    final s = v?.toString() ?? '';
+    return DateTime.tryParse(s) ?? (fallback ?? DateTime.now());
+    // รองรับรูปแบบ ISO ที่มี timezone เช่น 2025-11-01T00:46:20.139+00:00
+  }
+
+  QaQuestion _fromDb(Map<String, dynamic> m) {
+    final id = (m['_id'] ?? '').toString();
+    final qText = (m['question_text'] ?? '').toString();
+    final qTime = _parseTime(m['question_created_at']);
+    final answered = _isAnswered(m);
+
+    // ถ้ามีคำตอบ ให้สร้างเป็น 1 answer จากช่อง answer_text / answer_created_at
     final answers = answered
         ? [
             QaAnswer(
-              id: 'a_${id}',
-              author: organizerName,
-              text: ans,
-              time: ts,
-            )
+              id: 'a_$id',
+              author: organizerName, // ถ้าต้องการชื่อจริงของผู้ตอบ ดึงเพิ่มจาก answerer_id ได้
+              text: (m['answer_text'] ?? '').toString(),
+              time: _parseTime(m['answer_created_at'], fallback: qTime),
+            ),
           ]
         : const <QaAnswer>[];
+
     return QaQuestion(
       id: id,
-      author: 'You',
+      author: 'Anonymous', // ถ้าจะโชว์ชื่อคนถาม ให้แมปจาก questioner_id -> โปรไฟล์
       text: qText,
-      time: ts,
+      time: qTime,
       answered: answered,
       answers: answers,
     );
   }
 
   @override
+  Future<List<QaQuestion>> fetchQuestions() async {
+    await AuthService.I.init();
+    // คาดว่า endpoint คืนลิสต์ของ doc สคีมานี้
+    final raw = await DatabaseService().getEventQaListFiber(eventId);
+    final list = raw.map<QaQuestion>((m) => _fromDb(Map<String, dynamic>.from(m))).toList(growable: false);
+    // จัดเรียงล่าสุดก่อน
+    list.sort((a, b) => b.time.compareTo(a.time));
+    return list;
+  }
+
+  @override
+  Future<QaQuestion> postQuestion({required String text}) async {
+    await AuthService.I.init();
+    // ให้ backend สร้าง doc ใหม่ ตามสคีมาเดียวกัน (คืนค่าเป็น docเดียว)
+    final res = await DatabaseService().postEventQuestionFiber(eventId, text);
+    final q = _fromDb(Map<String, dynamic>.from(res));
+    return q;
+  }
+
+  @override
   Future<QaAnswer> postAnswer({required String qid, required String text}) async {
-    // Attempt to answer via PATCH /qa/:qaId/answer (may require organizer rights)
+    await AuthService.I.init();
+    // ให้ backend บันทึกคำตอบ (โดยปกติจะคืน doc หลังอัปเดต)
     final res = await DatabaseService().answerEventQaFiber(qid, text);
-    final id = (res['id'] ?? res['_id'] ?? '').toString();
-    final tsStr = (res['answerCreatedAt'] ?? DateTime.now().toIso8601String()).toString();
-    final ts = DateTime.tryParse(tsStr) ?? DateTime.now();
-    final author = organizerName;
-    final ansText = (res['answerText'] ?? text).toString();
-    return QaAnswer(id: 'a_${id}', author: author, text: ansText, time: ts);
+    final m = Map<String, dynamic>.from(res);
+
+    final id = (m['_id'] ?? qid).toString();
+    final aText = (m['answer_text'] ?? text).toString();
+    final aTime = _parseTime(m['answer_created_at']);
+    return QaAnswer(id: 'a_$id', author: organizerName, text: aText, time: aTime);
   }
 }
 
@@ -304,14 +217,13 @@ class QaPage extends StatefulWidget {
   final String title;
   final String organizerName;
 
-  /// สามารถ inject data source มาด้วยได้ (ถ้าไม่ส่งจะใช้ FakeQaDataSource)
-  final QaDataSource? dataSource;
+  final QaDataSource dataSource;
 
   const QaPage({
     super.key,
     required this.title,
     required this.organizerName,
-    this.dataSource,
+    required this.dataSource,
   });
 
   @override
@@ -322,51 +234,78 @@ enum _Filter { all, organizerAnswered, noAnswer }
 
 class _QaPageState extends State<QaPage> {
   final _searchCtl = TextEditingController();
-  late final QaDataSource _ds =
-      widget.dataSource ?? FakeQaDataSource(organizerName: widget.organizerName);
+  late final QaDataSource _ds = widget.dataSource;
 
   List<QaQuestion> _all = const [];
-  bool _canAnswer = false; // only organizers of this event can answer
+  bool _canAnswer = false; // เฉพาะ organizer ของอีเวนต์นี้
   bool _loading = true;
   _Filter _filter = _Filter.all;
+
+  Timer? _poller;
 
   @override
   void initState() {
     super.initState();
     _load();
     _evalOrganizerPermission();
+    // Poll ข้อมูลทุก 15s (แค่ตอนใช้ backend)
+    if (_ds is EventQaApiDataSource) {
+      _poller = Timer.periodic(const Duration(seconds: 15), (_) => _silentReload());
+    }
   }
 
   @override
   void dispose() {
     _searchCtl.dispose();
+    _poller?.cancel();
     super.dispose();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final data = await _ds.fetchQuestions();
-    if (!mounted) return;
-    setState(() {
-      _all = data;
-      _loading = false;
-    });
+    try {
+      if (_ds is EventQaApiDataSource) {
+        await AuthService.I.init();
+      }
+      final data = await _ds.fetchQuestions();
+      if (!mounted) return;
+      setState(() {
+        _all = data;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('โหลด Q&A ไม่สำเร็จ: $e')),
+      );
+    }
+  }
+
+  Future<void> _silentReload() async {
+    try {
+      final data = await _ds.fetchQuestions();
+      if (!mounted) return;
+      setState(() => _all = data);
+    } catch (_) {
+      // เงียบ ๆ ไม่ต้องเด้ง error ตอนเบื้องหลัง
+    }
   }
 
   Future<void> _evalOrganizerPermission() async {
     try {
-      // Only applicable when using backend data source (has eventId)
       if (_ds is! EventQaApiDataSource) {
         setState(() => _canAnswer = false);
         return;
       }
       final eid = (_ds as EventQaApiDataSource).eventId;
       await AuthService.I.init();
-      // Fetch my profile to get _id
       final me = await DatabaseService().getMeFiber();
       final myId = (me['_id'] ?? me['id'] ?? '').toString();
-      if (myId.isEmpty) { setState(() => _canAnswer = false); return; }
-      // Fetch organizers for this event
+      if (myId.isEmpty) {
+        setState(() => _canAnswer = false);
+        return;
+      }
       final orgs = await DatabaseService().getEventParticipantsFiber(eid, role: 'organizer');
       final ok = orgs.any((m) => (m['user_id'] ?? '').toString() == myId);
       setState(() => _canAnswer = ok);
@@ -595,10 +534,25 @@ class _QaPageState extends State<QaPage> {
                       onPressed: () async {
                         final text = controller.text.trim();
                         if (text.isEmpty) return;
-                        final newQ = await _ds.postQuestion(text: text); // ใช้ data source
-                        if (!mounted) return;
-                        setState(() => _all = [newQ, ..._all]);
-                        Navigator.pop(context);
+
+                        try {
+                          // สร้างคำถาม
+                          await _ds.postQuestion(text: text);
+
+                          // ดึงข้อมูล “ล่าสุดจาก DB” แทนการแค่แทรกในลิสต์
+                          await _load();
+
+                          if (!mounted) return;
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('ส่งคำถามแล้ว')),
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('ส่งคำถามไม่สำเร็จ: $e')),
+                          );
+                        }
                       },
                       icon: const Icon(Icons.send),
                       label: const Text('โพสต์คำถาม'),
@@ -614,19 +568,21 @@ class _QaPageState extends State<QaPage> {
   }
 
   Future<void> _addAnswer(String qid, String text) async {
-    final ans = await _ds.postAnswer(qid: qid, text: text); // ใช้ data source
-    if (!mounted) return;
-    setState(() {
-      _all = _all.map((q) {
-        if (q.id == qid) {
-          return q.copyWith(answers: [...q.answers, ans], answered: true);
-        }
-        return q;
-      }).toList();
-    });
+    try {
+      // ส่งคำตอบขึ้น backend
+      await _ds.postAnswer(qid: qid, text: text);
+
+      // ดึงข้อมูลล่าสุดจาก DB เพื่อ sync กับคนอื่นและค่าเวลา/สถานะจริง
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ส่งคำตอบไม่สำเร็จ: $e')),
+      );
+    }
   }
 
-  // ======== VIEW PIPELINE (เรียงล่าสุดก่อนเสมอ) ========
+  // ======== VIEW PIPELINE ========
   List<QaQuestion> _applyView(List<QaQuestion> src) {
     var list = List<QaQuestion>.from(src);
 
@@ -655,12 +611,11 @@ class _QaPageState extends State<QaPage> {
 }
 
 /// ========================= CARD =========================
-/// (ตัด “จำนวนคำตอบ” ออก)
 class _QaCard extends StatefulWidget {
   final QaQuestion q;
   final String organizerName;
   final bool canAnswer;
-  final ValueChanged<String> onAddAnswer;
+  final Future<void> Function(String) onAddAnswer;
   const _QaCard({
     required this.q,
     required this.organizerName,
@@ -674,11 +629,11 @@ class _QaCard extends StatefulWidget {
 
 class _QaCardState extends State<_QaCard> {
   bool _expanded = false;
+  bool _sending = false;
 
   @override
   Widget build(BuildContext context) {
     final q = widget.q;
-    final meta = '${q.author} • ${_relTime(q.time)}';
     final answers = q.answers;
 
     return Material(
@@ -697,7 +652,6 @@ class _QaCardState extends State<_QaCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // (ไม่มี vote/จำนวนคำตอบ/ปักหมุด)
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -712,7 +666,8 @@ class _QaCardState extends State<_QaCard> {
                           ),
                         ),
                         const SizedBox(height: 6.0),
-                        Text(meta, style: const TextStyle(color: _textSecondary, fontSize: 12.0)),
+                        Text('${q.author} • ${_relTimeTh(q.time)}',
+                            style: const TextStyle(color: _textSecondary, fontSize: 12.0)),
                         const SizedBox(height: 10.0),
                         Row(
                           children: [
@@ -785,7 +740,7 @@ class _QaCardState extends State<_QaCard> {
               const SizedBox(height: 4.0),
               Text(a.text, style: const TextStyle(color: _textPrimary, height: 1.4)),
               const SizedBox(height: 6.0),
-              Text(_relTime(a.time), style: const TextStyle(color: _textSecondary, fontSize: 11.0)),
+              Text(_relTimeTh(a.time), style: const TextStyle(color: _textSecondary, fontSize: 11.0)),
             ],
           ),
         );
@@ -823,23 +778,41 @@ class _QaCardState extends State<_QaCard> {
           const SizedBox(width: 8.0),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: _brand, foregroundColor: Colors.white),
-            onPressed: () {
-              final t = ctl.text.trim();
-              if (t.isEmpty) return;
-              widget.onAddAnswer(t);
-            },
-            child: const Icon(Icons.send, size: 18.0),
+            onPressed: _sending
+                ? null
+                : () async {
+                    final t = ctl.text.trim();
+                    if (t.isEmpty) return;
+                    setState(() => _sending = true);
+                    try {
+                      await widget.onAddAnswer(t);
+                      ctl.clear();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('ส่งคำตอบแล้ว')),
+                        );
+                      }
+                    } finally {
+                      if (mounted) setState(() => _sending = false);
+                    }
+                  },
+            child: _sending
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.send, size: 18.0),
           ),
         ],
       ),
     );
   }
 
-  static String _relTime(DateTime time) {
+  /// ภาษาไทยอ่านง่าย
+  static String _relTimeTh(DateTime time) {
     final d = DateTime.now().difference(time);
     if (d.inMinutes < 1) return 'เมื่อสักครู่';
     if (d.inMinutes < 60) return '${d.inMinutes} นาทีที่แล้ว';
-    if (d.inHours < 24) return '${d.inHours} ชม.ที่แล้ว';
+    if (d.inHours < 24) return '${d.inHours} ชั่วโมงที่แล้ว';
     return '${d.inDays} วันที่แล้ว';
   }
 }
+
+

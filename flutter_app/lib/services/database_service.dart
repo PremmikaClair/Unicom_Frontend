@@ -1025,6 +1025,11 @@ class DatabaseService {
           ? (e['event'] as Map).cast<String, dynamic>()
           : null;
       final ev = evMaybe ?? e.cast<String, dynamic>();
+      // Filter by status: show only active events (skip pending/rejected/etc.)
+      final rawStatus = (ev['status'] ?? ev['Status'] ?? ev['event_status'])?.toString().toLowerCase();
+      if (rawStatus != null && rawStatus.isNotEmpty && rawStatus != 'active') {
+        continue;
+      }
       final schedules = ((evMaybe != null ? e['schedules'] : ev['schedules']) as List?)
               ?.cast<Map<String, dynamic>>() ??
           const [];
