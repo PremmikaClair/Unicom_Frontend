@@ -1,4 +1,4 @@
-// lib/pages/event/register_event_page.dart
+﻿// lib/pages/event/register_event_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:characters/characters.dart';
@@ -55,9 +55,8 @@ class _RegisterEventPageState extends State<RegisterEventPage> {
   }
 
   Future<void> _load() async {
-    // Fetch participants from backend: only accepted registrations and role=participant
     final rows = await DatabaseService()
-        .getEventParticipantsFiber(widget.eventId, status: _apiStatus, role: 'participant');
+        .getEventParticipantsFiber(widget.eventId, status: _apiStatus);
 
     // map -> model ที่หน้า UI ใช้สะดวก
     _all = <_Participant>[
