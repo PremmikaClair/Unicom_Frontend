@@ -91,6 +91,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final Map<String, int> _likeCounts = {};
   final Map<String, int> _commentCounts = {};
   String? _resolvedUid; // resolved user id when viewing others
+  String? _myId; // current logged-in user id
   String? _postsNextCursor; // next cursor from getFeed for paging
   String? _feedCursor;      // internal cursor when scanning feed for user's posts
   bool _postsFetchingMore = false;
@@ -486,6 +487,15 @@ class _ProfilePageState extends State<ProfilePage> {
     safeSetState(() { _loading = true; _error = null; });
 
     try {
+      // Always try to resolve my own id for ownership checks
+      try {
+        final meMap = await _db.getMeFiber();
+        final meId = _stringId(meMap['_id'] ?? meMap['id'] ?? meMap['oid']);
+        if (meId != null && meId.isNotEmpty) {
+          _myId = meId;
+        }
+      } catch (_) {}
+
       if (_isMine) {
         final sp = await SharedPreferences.getInstance();
         _usernameAlias = sp.getString(_kAliasKey) ?? widget.initialUsername;
@@ -1527,6 +1537,12 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   bool get _isMine {
+    final myId = (_myId ?? '').trim();
+    if (myId.isNotEmpty) {
+      final target = (widget.userId ?? _resolvedUid ?? '').trim();
+      if (target.isEmpty) return true;
+      return target == myId;
+    }
     if (widget.userId != null && widget.userId!.isNotEmpty) return false;
     if ((widget.initialUsername ?? widget.initialAvatarUrl ?? widget.initialName) != null) return false;
     return true;
